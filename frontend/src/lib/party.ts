@@ -10,13 +10,15 @@ export function connect(
   editor: monacoNS.editor.IStandaloneCodeEditor,
   model: monacoNS.editor.ITextModel,
   user: { id: string; name: string; color: string },
-  monaco: typeof monacoNS
+  monaco: typeof monacoNS,
+  editorId: string = "main"
 ) {
   PARTY_URL ??= process.env.NEXT_PUBLIC_PARTYKIT_URL;
   if (!PARTY_URL) throw new Error("Set NEXT_PUBLIC_PARTYKIT_URL");
 
   const doc = new Y.Doc();
   const ytext = doc.getText("monaco");
+  const stdin = doc.getText("stdin");
   const roomState = doc.getMap<string>("roomState");
   const meta = doc.getMap<unknown>("meta");
 
@@ -31,8 +33,8 @@ export function connect(
     color: user.color || "#5FD0A8"
   });
 
-  // Inject per-client cursor styles
-  const styleId = "flux-cursor-styles";
+  // Inject per-client cursor styles (scoped to editor)
+  const styleId = `flux-cursor-styles-${editorId}`;
   const renderCursorStyles = () => {
     let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
     if (!styleEl) {
@@ -62,11 +64,11 @@ export function connect(
       // Contrast: pick text color based on background brightness
       const textColor = parseInt(color.slice(1), 16) > 0x7FFFFF ? "#000" : "#fff";
       
-      return `.monaco-editor .yRemoteSelection-${clientId} { background: ${color}33; }
-.monaco-editor .yRemoteSelectionHead-${clientId} { border-left: 2px solid ${color}; position: relative; }
-.monaco-editor .yRemoteSelectionHead-${clientId}::after { content: ""; position: absolute; top: -6px; left: -6px; right: -6px; bottom: -6px; }
-.monaco-editor .yRemoteSelectionHead-${clientId}::before { content: "${name}"; position: absolute; top: -14px; left: 8px; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 500; white-space: nowrap; color: ${textColor}; background: ${color}; opacity: 0; pointer-events: none; z-index: 1; transition: opacity 0.15s ease; }
-.monaco-editor .yRemoteSelectionHead-${clientId}:hover::before { opacity: 1; }`;
+      return `.monaco-editor[data-editor="${editorId}"] .yRemoteSelection-${clientId} { background: ${color}33; }
+.monaco-editor[data-editor="${editorId}"] .yRemoteSelectionHead-${clientId} { border-left: 2px solid ${color}; position: relative; }
+.monaco-editor[data-editor="${editorId}"] .yRemoteSelectionHead-${clientId}::after { content: ""; position: absolute; top: -6px; left: -6px; right: -6px; bottom: -6px; }
+.monaco-editor[data-editor="${editorId}"] .yRemoteSelectionHead-${clientId}::before { content: "${name}"; position: absolute; top: -14px; left: 8px; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 500; white-space: nowrap; color: ${textColor}; background: ${color}; opacity: 0; pointer-events: none; z-index: 1; transition: opacity 0.15s ease; }
+.monaco-editor[data-editor="${editorId}"] .yRemoteSelectionHead-${clientId}:hover::before { opacity: 1; }`;
     }).join("\n");
 
     styleEl.textContent = css;
@@ -113,6 +115,6 @@ export function connect(
       binding?.destroy();
       provider.destroy();
     },
-    { getRoomState: () => roomState, getAwareness: () => provider.awareness }
+    { getRoomState: () => roomState, getAwareness: () => provider.awareness, getStdin: () => stdin }
   ] as const;
 }
