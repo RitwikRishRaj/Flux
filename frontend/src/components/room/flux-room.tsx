@@ -18,7 +18,7 @@ const Editor = dynamic(() => import("@monaco-editor/react"), {
 type Tab = "output" | "input" | "tests";
 const EASE = [0.32, 0.72, 0, 1] as const;
 
-export interface RoomUser { name: string; color: string }
+export interface RoomUser { id: string; name: string; color: string }
 
 export function FluxRoom({ id, user }: { id: string; user: RoomUser }) {
   const [compilerId, setCompilerId] = useState<CompilerId>("python-3.14");
@@ -30,7 +30,8 @@ export function FluxRoom({ id, user }: { id: string; user: RoomUser }) {
   const [result, setResult] = useState<RunResult | null>(null);
   const [netErr, setNetErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [remoteUsers, setRemoteUsers] = useState<Array<{ name: string; color: string }>>([]);
+  const [remoteUsers, setRemoteUsers] = useState<Array<{ id: string; name: string; color: string }>>([]);
+  const userIdRef = useRef<string>(user.id);
   const editorRef = useRef<monacoNS.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monacoNS.editor.ITextModel | null>(null);
   const disconnectRef = useRef<(() => void) | null>(null);
@@ -125,8 +126,8 @@ export function FluxRoom({ id, user }: { id: string; user: RoomUser }) {
         <div className="flex-1" />
 
         {/* Remote users */}
-        {remoteUsers.map((u, i) => (
-          <div key={i} title={u.name} className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-black" style={{ backgroundColor: u.color }}>
+        {remoteUsers.map(u => (
+          <div key={u.id} title={u.name} className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-black" style={{ backgroundColor: u.color }}>
             <span className="max-w-24 truncate">{u.name}</span>
           </div>
         ))}
@@ -181,11 +182,22 @@ export function FluxRoom({ id, user }: { id: string; user: RoomUser }) {
 
                     // Listen for awareness changes (remote users)
                     awarenessRef.current.on("change", () => {
-                      const entries = Array.from(awarenessRef.current.getStates().entries()) as [number, { user: { name: string; color: string } }][];
-                      const users = entries
-                        .filter(([id]) => id !== awarenessRef.current.clientID)
-                        .map(([, state]) => state.user);
-                      setRemoteUsers(users);
+                      const meta = awarenessRef.current.meta;
+                      const states = awarenessRef.current.getStates();
+                      
+                      // Group by user.id, keep most recently updated per user
+                      const byUser = new Map<string, { user: { id: string; name: string; color: string }; lastUpdated: number }>();
+                      states.forEach((state: any, clientId: number) => {
+                        if (clientId !== awarenessRef.current.clientID && state.user?.id) {
+                          const lastUpdated = meta.get(clientId)?.lastUpdated ?? 0;
+                          const existing = byUser.get(state.user.id);
+                          if (!existing || lastUpdated > existing.lastUpdated) {
+                            byUser.set(state.user.id, { user: state.user, lastUpdated });
+                          }
+                        }
+                      });
+                      
+                      setRemoteUsers(Array.from(byUser.values()).map(v => v.user));
                     });
                   }
                 }}

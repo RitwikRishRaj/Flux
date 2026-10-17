@@ -136,8 +136,8 @@ const FluxHero = () => {
         {/* Room panel: top on small screens, vertically centred on the right from lg */}
         <div className="absolute inset-x-4 top-4 z-10 mx-auto max-w-[420px] sm:top-6 lg:inset-x-auto lg:right-10 lg:top-1/2 lg:mx-0 lg:w-[420px] lg:-translate-y-1/2">
           <RoomPanel
-            onEnter={({ mode, id, name, color }) =>
-              router.push(`/room/${id}?name=${encodeURIComponent(name)}&color=${encodeURIComponent(color)}&mode=${mode}`)
+            onEnter={({ room, user }) =>
+              router.push(`/room/${room}?name=${encodeURIComponent(user.name)}&color=${encodeURIComponent(user.color)}&id=${encodeURIComponent(user.id)}`)
             }
           />
         </div>

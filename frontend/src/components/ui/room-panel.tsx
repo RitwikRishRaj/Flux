@@ -9,8 +9,8 @@ type Mode = "create" | "join";
 export interface RoomEntry {
   mode: Mode;
   id: string;
-  name: string;
-  color: string;
+  room: string;
+  user: { id: string; name: string; color: string };
 }
 
 const COLORS = ["#5FD0A8", "#7FB2F0", "#F0A27F", "#E58FB4"];
@@ -58,8 +58,17 @@ export function RoomPanel({ onEnter }: { onEnter: (entry: RoomEntry) => void }) 
   // Generated on the client to avoid a hydration mismatch; name and colour are remembered.
   useEffect(() => {
     setRoomId(makeId());
-    setName(localStorage.getItem("flux-name") ?? "");
-    setColor(localStorage.getItem("flux-color") ?? COLORS[0]);
+    try {
+      const savedId = localStorage.getItem("flux-id");
+      const savedName = localStorage.getItem("flux-name");
+      const savedColor = localStorage.getItem("flux-color");
+      const id = savedId || crypto.randomUUID();
+      if (!savedId) localStorage.setItem("flux-id", id);
+      setName(savedName ?? "");
+      setColor(savedColor ?? COLORS[0]);
+    } catch {
+      // localStorage blocked: use in-memory fallback
+    }
     // SVG backdrop filters only work in Chromium; others get plain frosted glass.
     setLens(/Chrome\//.test(navigator.userAgent) && !/OPR\//.test(navigator.userAgent));
   }, []);
@@ -77,12 +86,18 @@ export function RoomPanel({ onEnter }: { onEnter: (entry: RoomEntry) => void }) 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanName = name.trim().slice(0, 24);
-    const id = mode === "create" ? roomId : parseId(joinInput);
-    if (mode === "join" && !ID_RE.test(id)) return setError("room"), joinRef.current?.focus();
+    const parsedRoomId = mode === "create" ? roomId : parseId(joinInput);
+    if (mode === "join" && !ID_RE.test(parsedRoomId)) return setError("room"), joinRef.current?.focus();
     if (!cleanName) return setError("name"), nameRef.current?.focus();
-    localStorage.setItem("flux-name", cleanName);
-    localStorage.setItem("flux-color", color);
-    onEnter({ mode, id, name: cleanName, color });
+    try {
+      localStorage.setItem("flux-name", cleanName);
+      localStorage.setItem("flux-color", color);
+    } catch { /* blocked */ }
+    const userId = (() => {
+      try { return localStorage.getItem("flux-id") || crypto.randomUUID(); }
+      catch { return crypto.randomUUID(); }
+    })();
+    onEnter({ mode, id: userId, room: parsedRoomId, user: { id: userId, name: cleanName, color } });
   };
 
   const tabs: { key: Mode; label: string }[] = [
