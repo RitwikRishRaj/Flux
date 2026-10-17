@@ -4,14 +4,19 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 
-// Load .env (only keys not already set in the environment)
-try {
-  for (const line of fs.readFileSync(path.join(__dirname, ".env"), "utf8").split("\\n")) {
-    const m = line.match(/^\\s*([A-Z0-9_]+)\\s*=\\s*(.*)\\s*$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-  }
-} catch {
-  /* no .env file */
+// Load .env
+const envPath = path.join(__dirname, ".env");
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, "utf8");
+  envContent.split(/\r?\n/).forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const [key, ...valueParts] = trimmed.split("=");
+    if (key && valueParts.length > 0) {
+      const value = valueParts.join("=").replace(/^["']|["']$/g, "").trim();
+      if (!process.env[key]) process.env[key] = value;
+    }
+  });
 }
 
 const API_KEY = process.env.ONLINECOMPILER_API_KEY;

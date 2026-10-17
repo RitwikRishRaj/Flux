@@ -79,12 +79,7 @@ export function FluxRoom({ id, user }: { id: string; user: RoomUser }) {
 
   const switchLanguage = (cid: CompilerId) => {
     setCompilerId(cid);
-    const c = byId(cid);
-    // Replace with template only if document is empty
-    const currentCode = editorRef.current?.getValue() ?? "";
-    if (!currentCode.trim()) {
-      setCode(c.hello as string);
-    }
+    setCode(byId(cid).hello as string);
     // Sync language to other users
     if (roomStateRef.current) {
       roomStateRef.current.set("compilerId", cid);
@@ -171,7 +166,7 @@ export function FluxRoom({ id, user }: { id: string; user: RoomUser }) {
                   monaco.editor.setTheme("flux");
                   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runRef.current());
                   if (!disconnectRef.current && modelRef.current) {
-                    const [disconnect, { getRoomState, getAwareness }] = connect(id, editor, modelRef.current, user);
+                    const [disconnect, { getRoomState, getAwareness }] = connect(id, editor, modelRef.current, user, monaco);
                     disconnectRef.current = disconnect;
                     roomStateRef.current = getRoomState();
                     awarenessRef.current = getAwareness();
@@ -179,7 +174,7 @@ export function FluxRoom({ id, user }: { id: string; user: RoomUser }) {
                     // Listen for language changes from other users
                     roomStateRef.current.observe(() => {
                       const newCompilerId = roomStateRef.current?.get("compilerId");
-                      if (newCompilerId && newCompilerId !== compilerId) {
+                      if (newCompilerId && newCompilerId !== compilerId && COMPILERS.some(c => c.id === newCompilerId)) {
                         setCompilerId(newCompilerId as CompilerId);
                       }
                     });
