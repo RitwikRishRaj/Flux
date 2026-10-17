@@ -1,6 +1,7 @@
 import * as Y from "yjs";
 import YProvider from "y-partyserver/provider";
 import type * as monacoNS from "monaco-editor";
+import { byId } from "./compilers";
 
 let PARTY_URL: string | undefined;
 
@@ -17,6 +18,7 @@ export function connect(
   const doc = new Y.Doc();
   const ytext = doc.getText("monaco");
   const roomState = doc.getMap<string>("roomState");
+  const meta = doc.getMap<unknown>("meta");
 
   const provider = new YProvider(PARTY_URL, roomId, doc, {
     party: "main",
@@ -77,11 +79,25 @@ export function connect(
   provider.awareness.on("change", renderCursorStyles);
 
   let binding: any;
+  let seeded = false;
 
   provider.on("sync", () => {
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && !model.isDisposed()) {
       import("y-monaco").then(({ MonacoBinding }) => {
+        if (model.isDisposed()) return;
         binding = new MonacoBinding(ytext, model, new Set([editor]), provider.awareness);
+
+        // Seed template on first sync if document is empty
+        if (!seeded && ytext.length === 0) {
+          doc.transact(() => {
+            if (ytext.length === 0 && !meta.has("seeded")) {
+              const compiler = byId(roomState.get("compilerId") || "python-3.14");
+              ytext.insert(0, compiler.hello);
+              meta.set("seeded", true);
+              seeded = true;
+            }
+          });
+        }
       }).catch(err => console.error("Failed to load MonacoBinding:", err));
     }
   });

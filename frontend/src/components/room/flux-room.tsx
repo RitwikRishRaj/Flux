@@ -23,7 +23,7 @@ export interface RoomUser { id: string; name: string; color: string }
 export function FluxRoom({ id, user }: { id: string; user: RoomUser }) {
   const [compilerId, setCompilerId] = useState<CompilerId>("python-3.14");
   const compiler = byId(compilerId);
-  const [code, setCode] = useState(compiler.hello as string);
+  const [code, setCode] = useState(""); // Empty: template seeded by Yjs after first sync
   const [stdin, setStdin] = useState("");
   const [tab, setTab] = useState<Tab>("output");
   const [running, setRunning] = useState(false);
@@ -173,11 +173,14 @@ export function FluxRoom({ id, user }: { id: string; user: RoomUser }) {
                     awarenessRef.current = getAwareness();
 
                     // Listen for language changes from other users
+                    let initialized = false;
                     roomStateRef.current.observe(() => {
                       const newCompilerId = roomStateRef.current?.get("compilerId");
-                      if (newCompilerId && newCompilerId !== compilerId && COMPILERS.some(c => c.id === newCompilerId)) {
+                      // Skip initial load, only respond to remote changes
+                      if (initialized && newCompilerId && newCompilerId !== compilerId && COMPILERS.some(c => c.id === newCompilerId)) {
                         setCompilerId(newCompilerId as CompilerId);
                       }
+                      initialized = true;
                     });
 
                     // Listen for awareness changes (remote users)
