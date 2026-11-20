@@ -515,6 +515,9 @@ export function FluxRoom({ id, user }: { id: string; user: RoomUser }) {
                       }
                     }}
                     theme="flux"
+                    beforeMount={(monaco) => {
+                      monaco.editor.defineTheme("flux", FLUX_THEME);
+                    }}
                     onMount={(editor, monaco) => {
                       stdinEditorRef.current = editor;
                       stdinModelRef.current = editor.getModel();
