@@ -13,11 +13,23 @@ cp .env.example .env
 npm run dev
 ```
 
-Runs on `http://localhost:8787`. Health check: `curl http://localhost:8787/health`.
+Runs on `http://localhost:8788`. Health check: `curl http://localhost:8788/health`.
 
-### 2. Frontend (Next.js app)
+### 2. Sync server (live editing)
 
-In a separate terminal:
+In a second terminal:
+
+```bash
+cd frontend
+cp .env.example .env.local
+npm run wrangler
+```
+
+Runs on `http://127.0.0.1:8787`, wrangler dev's default port (which is why the backend uses 8788).
+
+### 3. Frontend (Next.js app)
+
+In a third terminal:
 
 ```bash
 cd frontend
@@ -30,8 +42,8 @@ Opens at `http://localhost:3000`.
 
 ```
 Flux/
-├── backend/           # Node server (port 8787)
-│   ├── server.js      # /health and /run endpoints
+├── backend/           # Node server (port 8788)
+│   ├── server.js      # /health, /run, /run-tests and /run-tests/plan
 │   ├── .env           # API key (not committed)
 │   └── package.json
 │
@@ -50,7 +62,7 @@ Flux/
     │       ├── compilers.ts             # 12 supported languages
     │       └── flux-monaco.ts           # Custom dark theme
     ├── package.json
-    ├── next.config.mjs                  # Rewrite /api/backend → :8787
+    ├── next.config.mjs                  # Rewrite /api/backend → :8788
     └── tailwind.config.ts
 ```
 

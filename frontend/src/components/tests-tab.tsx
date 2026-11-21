@@ -3,7 +3,6 @@
 import { memo, useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2, Play, Check, X, AlertCircle, Clock, ChevronDown, ChevronUp } from "lucide-react";
-import type { RunResult } from "@/lib/compilers";
 
 export interface TestCase {
   id: string;
@@ -11,12 +10,66 @@ export interface TestCase {
   expectedOutput: string;
 }
 
-const MAX_CASES = 50;
+// One test's outcome, shared through Yjs. verdict is the API's (docs/run-tests); status drives the colours.
+export type TestResult = { status: string; verdict?: string; actual?: string; stderr?: string; durationMs?: number; truncated?: boolean };
+export type TestRunState = {
+  runId: string; runBy: string; runById: string; startedAt: number; finishedAt: number | null; interrupted: boolean;
+  results: Map<string, TestResult>;
+  verdict: string | null; compileError: string | null; error: string | null;
+  timeLimit: number | null; // seconds per test the server chose; fewer tests get more time
+  batchIndex: number; batchCount: number; // progress: tests go in batches small enough to keep the full time limit
+};
+
+const MAX_CASES = 32;            // the free plan's tests per run-tests request
 const MAX_FIELD = 10000;
-const TIMEOUT_MS = 10000;
+const CLIENT_TIMEOUT_MS = 75000; // the API gives a run-tests request 60 s, plus network
+const FALLBACK_BATCH = 8;        // keeps the full time limit in every language if the batch-size call fails
+
+// Leaving the page aborts the batch in flight; that should read as an interrupted run, not a server failure.
+let pageLeaving = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => { pageLeaving = true; });
+  window.addEventListener("pageshow", () => { pageLeaving = false; }); // back from the back/forward cache
+}
+
+const VERDICT_LABEL: Record<string, string> = {
+  accepted: "pass",
+  wrong_answer: "wrong answer",
+  time_limit_exceeded: "time limit",
+  memory_limit_exceeded: "memory limit",
+  output_limit_exceeded: "output limit",
+  runtime_error: "runtime error",
+  compilation_error: "compile error",
+  skipped: "skipped",
+  internal_error: "service error",
+};
+
+// Shown when a failing test has no stderr of its own to explain it.
+const VERDICT_HINT: Record<string, string> = {
+  time_limit_exceeded: "Took longer than the time limit shown above.",
+  memory_limit_exceeded: "Used more than the 512 MB memory limit.",
+  output_limit_exceeded: "Printed more output than allowed.",
+  compilation_error: "The code didn't compile. The compiler output is above.",
+  skipped: "Didn't start in time. Run again to finish it.",
+  internal_error: "The run service failed on this test. Run again.",
+};
+
+export const statusFromVerdict = (verdict: string) =>
+  verdict === "accepted" ? "pass" : verdict === "wrong_answer" ? "fail" : verdict === "skipped" ? "skipped" : "error";
+
+// The API's rule, applied across batches: the first test (in order) that failed decides; skipped only makes it incomplete.
+export const overallVerdict = (verdicts: string[]) =>
+  verdicts.find(v => v !== "accepted" && v !== "skipped") ?? (verdicts.includes("skipped") ? "incomplete" : "accepted");
 
 const normalize = (s: string) =>
   s.replace(/\r\n/g, "\n").split("\n").map(l => l.trimEnd()).join("\n").trimEnd();
+
+// First line (1-based) where actual and expected differ under the same rules as the trim checker; null if equal.
+export const firstDiffLine = (actual: string, expected: string) => {
+  const a = normalize(actual).split("\n"), e = normalize(expected).split("\n");
+  for (let i = 0; i < Math.max(a.length, e.length); i++) if (a[i] !== e[i]) return i + 1;
+  return null;
+};
 
 // Memoized test card with local state for smooth remote updates
 const TestCard = memo(function TestCard({
@@ -29,7 +82,7 @@ const TestCard = memo(function TestCard({
 }: {
   tc: TestCase;
   index: number;
-  result?: { status: string; actual?: string; stderr?: string; durationMs?: number };
+  result?: TestResult;
   queued: boolean;
   onEdit: (id: string, field: "stdin" | "expectedOutput", value: string) => void;
   onDelete: (id: string) => void;
@@ -112,7 +165,7 @@ const TestCard = memo(function TestCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
-      className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-white/[0.04] to-white/[0.02] ring-1 ring-inset ring-white/[0.06] hover:ring-white/[0.10] transition-all duration-150"
+      className="group relative shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-white/[0.04] to-white/[0.02] ring-1 ring-inset ring-white/[0.06] hover:ring-white/[0.10] transition-all duration-150"
     >
       {/* Left accent bar */}
       <div 
@@ -157,14 +210,17 @@ const TestCard = memo(function TestCard({
           {result?.status === "fail" && (
             <>
               <X className="h-3 w-3 text-red-400" strokeWidth={2.5} />
-              <span className="text-[10px] font-mono font-medium text-red-400">fail</span>
+              <span className="text-[10px] font-mono font-medium text-red-400">{VERDICT_LABEL[result.verdict ?? ""] ?? "fail"}</span>
             </>
           )}
           {result?.status === "error" && (
             <>
               <AlertCircle className="h-3 w-3 text-red-400" strokeWidth={2} />
-              <span className="text-[10px] font-mono font-medium text-red-400">error</span>
+              <span className="text-[10px] font-mono font-medium text-red-400">{VERDICT_LABEL[result.verdict ?? ""] ?? "error"}</span>
             </>
+          )}
+          {result?.status === "skipped" && (
+            <span className="text-[10px] font-mono font-medium text-primary/50">skipped</span>
           )}
           {!result && !queued && (
             <span className="text-[10px] font-mono text-primary/40">idle</span>
@@ -246,27 +302,35 @@ const TestCard = memo(function TestCard({
               </div>
 
               {/* Results */}
-              {result?.status === "fail" && result.actual !== undefined && (
+              {result?.status === "fail" && result.actual !== undefined && (() => {
+                const line = firstDiffLine(result.actual, tc.expectedOutput);
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-3 rounded-xl bg-red-500/[0.08] ring-1 ring-inset ring-red-500/20 p-3"
+                  >
+                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-red-400/80">actual output</span>
+                      <span className="text-[10px] font-mono text-primary/40">
+                        {/* The API returns only the first 4,096 characters, so past the cut the line number can't be trusted. */}
+                        {result.truncated ? "output cut at 4,096 characters" : line ? `differs at line ${line}` : null}
+                      </span>
+                    </div>
+                    <pre className="whitespace-pre-wrap font-mono text-[11px] text-primary/80 leading-relaxed">{result.actual}</pre>
+                  </motion.div>
+                );
+              })()}
+              {(result?.status === "error" || result?.status === "skipped") && (result.stderr || VERDICT_HINT[result.verdict ?? ""]) && (
                 <motion.div
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mt-3 rounded-xl bg-red-500/[0.08] ring-1 ring-inset ring-red-500/20 p-3"
+                  className={`mt-3 rounded-xl p-3 ring-1 ring-inset ${result.status === "skipped" ? "bg-white/[0.03] ring-white/[0.08]" : "bg-red-500/[0.08] ring-red-500/20"}`}
                 >
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-red-400/80">actual output</span>
-                    <span className="text-[10px] font-mono text-primary/40">diff at line 3</span>
+                  <div className={`mb-1.5 text-[10px] font-mono uppercase tracking-wider ${result.status === "skipped" ? "text-primary/50" : "text-red-400/80"}`}>
+                    {VERDICT_LABEL[result.verdict ?? ""] ?? "error"}
                   </div>
-                  <pre className="whitespace-pre-wrap font-mono text-[11px] text-primary/80 leading-relaxed">{result.actual}</pre>
-                </motion.div>
-              )}
-              {result?.status === "error" && result.stderr && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-3 rounded-xl bg-red-500/[0.08] ring-1 ring-inset ring-red-500/20 p-3"
-                >
-                  <div className="mb-1.5 text-[10px] font-mono uppercase tracking-wider text-red-400/80">error</div>
-                  <pre className="whitespace-pre-wrap font-mono text-[11px] text-primary/80 leading-relaxed">{result.stderr}</pre>
+                  <pre className="whitespace-pre-wrap font-mono text-[11px] text-primary/80 leading-relaxed">{result.stderr || VERDICT_HINT[result.verdict ?? ""]}</pre>
                 </motion.div>
               )}
             </div>
@@ -296,18 +360,33 @@ export function TestsTab({
   onAdd: () => void;
   onEdit: (id: string, field: "stdin" | "expectedOutput", value: string) => void;
   onDelete: (id: string) => void;
-  testRun: { runId: string; runBy: string; runById: string; startedAt: number; finishedAt: number | null; interrupted: boolean; results: Map<string, { status: string; actual?: string; stderr?: string; durationMs?: number }> } | null;
+  testRun: TestRunState | null;
   runningBy: string | null;
   testRunRef: React.MutableRefObject<any>;
   awarenessRef: React.MutableRefObject<any>;
   user: { id: string; name: string };
 }) {
+  // A run is in progress while the shared testRun has no finishedAt; that survives this tab remounting and covers
+  // everyone. selfRunning covers the moment before the run is written (while the batch size is fetched).
+  const [selfRunning, setSelfRunning] = useState(false);
+  const busy = selfRunning || !!runningBy || (!!testRun && testRun.finishedAt === null);
+
   const runAll = async () => {
-    if (runningBy) return;
-    
+    if (busy || tests.length === 0) return;
+    setSelfRunning(true);
+
     const runId = crypto.randomUUID();
     awarenessRef.current?.setLocalStateField("running", { runId, user: { name: user.name, id: user.id } });
-    
+
+    const cases = tests.slice(0, MAX_CASES);
+    let batchSize = FALLBACK_BATCH;
+    try {
+      const plan = (await (await fetch(`/api/backend/run-tests/plan?compiler=${encodeURIComponent(compiler)}`)).json()) as Record<string, any>;
+      if (Number.isInteger(plan.batch_size) && plan.batch_size > 0) batchSize = plan.batch_size;
+    } catch { /* keep the fallback */ }
+    const batches: TestCase[][] = [];
+    for (let i = 0; i < cases.length; i += batchSize) batches.push(cases.slice(i, i + batchSize));
+
     testRunRef.current?.doc!.transact(() => {
       testRunRef.current.set("runId", runId);
       testRunRef.current.set("runBy", user.name.replace(/["\\<>\n]/g, "").slice(0, 24));
@@ -316,51 +395,84 @@ export function TestsTab({
       testRunRef.current.set("finishedAt", null);
       testRunRef.current.set("interrupted", false);
       testRunRef.current.set("results", {});
+      testRunRef.current.set("verdict", null);
+      testRunRef.current.set("compileError", null);
+      testRunRef.current.set("error", null);
+      testRunRef.current.set("timeLimit", null);
+      testRunRef.current.set("batchIndex", 1);
+      testRunRef.current.set("batchCount", batches.length);
     });
-    
-    for (const tc of tests) {
-      const caseStart = Date.now();
-      
+
+    const results: Record<string, TestResult> = {};
+    let compileError: string | null = null, error: string | null = null, timeLimit: number | null = null;
+
+    // One batch at a time: the account runs 4 tests at once, so parallel batches would only queue behind each other.
+    for (let b = 0; b < batches.length && !error && !compileError; b++) {
+      const batch = batches[b];
+      testRunRef.current?.set("batchIndex", b + 1);
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-        
-        const res = await fetch("/api/backend/run", {
+        const timeoutId = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+        const res = await fetch("/api/backend/run-tests", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ compiler, code, input: tc.stdin }),
+          body: JSON.stringify({ compiler, code, tests: batch.map(tc => ({ input: tc.stdin, expected_output: tc.expectedOutput })) }),
           signal: controller.signal,
         });
-        
         clearTimeout(timeoutId);
-        const data = (await res.json()) as RunResult & { error?: string };
-        
-        const durationMs = Date.now() - caseStart;
-        const results = testRunRef.current.get("results") as Record<string, any> || {};
-        
+        // Every field is checked before use; the API's answer is untrusted input.
+        const data = (await res.json().catch(() => ({}))) as Record<string, any>;
+
         if (!res.ok) {
-          results[tc.id] = { status: "error", stderr: (data.error || `Request failed (${res.status})`).slice(0, 20000), durationMs };
-        } else if (data.exit_code !== 0) {
-          results[tc.id] = { status: "error", stderr: (data.error || `Runtime error (exit ${data.exit_code})`).slice(0, 20000), actual: (data.output || "").slice(0, 20000), durationMs };
+          error = typeof data.error === "string" ? data.error : `Request failed (${res.status})`;
         } else {
-          const actual = normalize(data.output || "");
-          const expected = normalize(tc.expectedOutput);
-          results[tc.id] = { status: actual === expected ? "pass" : "fail", actual: (data.output || "").slice(0, 20000), durationMs };
+          if (typeof data.time_limit === "number") timeLimit = Math.min(timeLimit ?? Infinity, data.time_limit);
+          if (typeof data.compile_error === "string") compileError = data.compile_error.slice(0, 20000);
+          // Results come back in the order the tests were sent (docs/run-tests).
+          batch.forEach((tc, i) => {
+            const r = Array.isArray(data.tests) ? data.tests[i] : null;
+            if (!r || typeof r.verdict !== "string") return;
+            const seconds = parseFloat(r.time);
+            results[tc.id] = {
+              status: statusFromVerdict(r.verdict),
+              verdict: r.verdict,
+              actual: typeof r.output === "string" ? r.output.slice(0, 20000) : "",
+              stderr: typeof r.error === "string" ? r.error.slice(0, 20000) : "",
+              ...(Number.isFinite(seconds) ? { durationMs: Math.round(seconds * 1000) } : {}),
+              truncated: r.truncated === true,
+            };
+          });
         }
-        
-        testRunRef.current.set("results", results);
       } catch (err) {
-        const errorMessage = err instanceof Error && err.name === "AbortError"
-          ? "Timeout (>10s)"
-          : "Network error";
-        const results = testRunRef.current.get("results") as Record<string, any> || {};
-        results[tc.id] = { status: "error", stderr: errorMessage, durationMs: Date.now() - caseStart };
-        testRunRef.current.set("results", results);
+        if (err instanceof Error && err.name === "AbortError") {
+          error = `No answer after ${CLIENT_TIMEOUT_MS / 1000} s. Try again.`;
+        } else {
+          // Leaving the page aborts the request before pagehide fires. Wait a moment: if the page is going away it
+          // is gone by then and writes nothing, and the others mark the run interrupted when this client disappears.
+          await new Promise(r => setTimeout(r, 500));
+          error = "Couldn't reach the run server.";
+        }
       }
+      if (error && batches.length > 1) error = `Batch ${b + 1} of ${batches.length}: ${error}`;
+      // The same code won't compile in later batches either, so mark them without spending runs on them.
+      if (compileError) for (const tc of cases) results[tc.id] ??= { status: "error", verdict: "compilation_error" };
+      testRunRef.current?.set("results", { ...results }); // share progress after every batch
     }
-    
-    testRunRef.current.set("finishedAt", Date.now());
+
+    // A failed batch leaves later tests unrun, so there is no overall verdict to claim.
+    const interrupted = pageLeaving && error !== null;
+    const verdict = error ? null : overallVerdict(cases.map(tc => results[tc.id]?.verdict ?? "skipped"));
+    testRunRef.current?.doc!.transact(() => {
+      testRunRef.current.set("results", results);
+      testRunRef.current.set("verdict", verdict);
+      testRunRef.current.set("compileError", compileError);
+      testRunRef.current.set("error", interrupted ? null : error);
+      testRunRef.current.set("interrupted", interrupted);
+      testRunRef.current.set("timeLimit", timeLimit);
+      testRunRef.current.set("finishedAt", Date.now());
+    });
     awarenessRef.current?.setLocalStateField("running", null);
+    setSelfRunning(false);
   };
 
   const results = testRun?.results || new Map();
@@ -426,10 +538,10 @@ export function TestsTab({
               <button
                 type="button"
                 onClick={runAll}
-                disabled={!!runningBy}
+                disabled={busy}
                 className="flex h-8 items-center gap-2 rounded-lg bg-[#5FD0A8] px-3.5 text-[11px] font-semibold text-black shadow-lg shadow-[#5FD0A8]/15 outline-none ring-1 ring-inset ring-white/20 transition-all duration-150 hover:shadow-xl hover:shadow-[#5FD0A8]/20 active:scale-[0.97] focus:ring-2 focus:ring-white/30 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
               >
-                {runningBy ? (
+                {busy ? (
                   <>
                     <Clock className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
                     <span>Running…</span>
@@ -459,12 +571,46 @@ export function TestsTab({
                 <span>{new Date(testRun.startedAt).toLocaleTimeString()}</span>
               </>
             )}
+            {testRun.batchCount > 1 && (
+              <>
+                <span className="text-primary/30 mx-1">·</span>
+                <span>{testRun.finishedAt ? `${testRun.batchCount} batches` : `batch ${testRun.batchIndex}/${testRun.batchCount}`}</span>
+              </>
+            )}
+            {testRun.timeLimit !== null && (
+              <>
+                <span className="text-primary/30 mx-1">·</span>
+                <span>{testRun.timeLimit} s per test</span>
+              </>
+            )}
             {testRun.interrupted && (
               <>
                 <span className="text-primary/30 mx-1">·</span>
                 <span className="text-red-400">interrupted</span>
               </>
             )}
+          </div>
+        )}
+
+        {tests.length > MAX_CASES && (
+          <p className="rounded-lg bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200/90">
+            Only the first {MAX_CASES} tests run. That&apos;s the free plan&apos;s limit per run.
+          </p>
+        )}
+        {testRun?.error && (
+          <p role="alert" className="rounded-lg bg-red-500/[0.08] px-3 py-2 text-[11px] text-red-300">{testRun.error}</p>
+        )}
+        {/* Any skipped test, not just an "incomplete" verdict: with batches, a failure in one batch decides the verdict
+            while another batch may still have tests that never started. */}
+        {Array.from(results.values()).some(r => r.verdict === "skipped") && (
+          <p className="rounded-lg bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200/90">
+            Some tests didn&apos;t start in time: the service stops starting tests 45 s into a run. Run again to finish them. Every test runs, and counts, again.
+          </p>
+        )}
+        {testRun?.compileError && (
+          <div className="rounded-xl bg-red-500/[0.08] p-3 ring-1 ring-inset ring-red-500/20">
+            <div className="mb-1.5 text-[10px] font-mono uppercase tracking-wider text-red-400/80">didn&apos;t compile</div>
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-primary/80">{testRun.compileError}</pre>
           </div>
         )}
       </div>

@@ -115,6 +115,16 @@ export function connect(
       binding?.destroy();
       provider.destroy();
     },
-    { getRoomState: () => roomState, getAwareness: () => provider.awareness, getStdin: () => stdin }
+    // isSynced is still false while the server's saved state is being applied, so callers can tell history from live edits.
+    {
+      getRoomState: () => roomState, getAwareness: () => provider.awareness, getStdin: () => stdin, isSynced: () => provider.synced,
+      // Runs cb once the server's saved state is in (right away if it already is). Returns an unsubscribe.
+      whenSynced: (cb: () => void) => {
+        if (provider.synced) { cb(); return () => {}; }
+        const onSynced = (synced: boolean) => { if (synced) { provider.off("synced", onSynced); cb(); } };
+        provider.on("synced", onSynced);
+        return () => provider.off("synced", onSynced);
+      }
+    }
   ] as const;
 }

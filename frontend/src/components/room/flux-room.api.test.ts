@@ -94,7 +94,7 @@ describe('flux-room run API', () => {
       // Expected
     }
 
-    const netErr = 'Could not reach backend on :8787';
-    expect(netErr).toBe('Could not reach backend on :8787');
+    const netErr = 'Could not reach backend on :8788';
+    expect(netErr).toBe('Could not reach backend on :8788');
   });
 });
