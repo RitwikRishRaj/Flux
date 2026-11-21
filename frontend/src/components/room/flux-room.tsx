@@ -6,7 +6,7 @@ import type * as monacoNS from "monaco-editor";
 import * as Y from "yjs";
 import { motion } from "framer-motion";
 import { ArrowLeft, Check, ChevronDown, Link2, Loader2, Play, SquareTerminal, FlaskConical, Terminal } from "lucide-react";
-import { COMPILERS, byId, isEmptyOrStarter, describeExit, formatSeconds, formatMemory, type CompilerId, type RunResult } from "@/lib/compilers";
+import { COMPILERS, RETIRED, byId, isEmptyOrStarter, describeExit, formatSeconds, formatMemory, type CompilerId, type RunResult } from "@/lib/compilers";
 import { FLUX_THEME } from "@/lib/flux-monaco";
 import { connect } from "@/lib/party";
 import { callRunApi } from "@/lib/run-api";
@@ -329,7 +329,9 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                     // Language changes from other users, and the saved language arriving on first sync after a reload.
                     // Only the language follows; the code itself comes from Yjs, so nothing is overwritten.
                     roomStateRef.current.observe(event => {
-                      const newCompilerId = roomStateRef.current?.get("compilerId");
+                      const saved = roomStateRef.current?.get("compilerId");
+                      // A room saved before an id was retired (e.g. dotnet-csharp-9) opens on the id it runs as now.
+                      const newCompilerId = saved ? (RETIRED[saved] ?? saved) : saved;
                       if (!newCompilerId || !COMPILERS.some(c => c.id === newCompilerId)) return;
                       setCompilerId(newCompilerId as CompilerId);
                       // Tell others, but not the switcher (local) and not for saved state replayed on load (not yet synced).

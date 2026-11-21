@@ -5,7 +5,7 @@ process.env.FLUX_QUEUE_WAIT_MS = "200"; // set before loading server.js, so "bus
 const {
   testTimeLimit, maxBatchSize, suggestedTimeLimit, runTestsWithRetry, sanitize,
   acquireSlots, releaseSlots, BusyError, lockRoom, unlockRoom, sweepRoomLocks, roomLocks, classifyUpstreamFailure,
-  nextBatchWillCome, ROOM_RE,
+  nextBatchWillCome, ROOM_RE, parseCompilerList, resolveCompiler, localCompilers,
 } = require("./server.js");
 
 test("testTimeLimit matches the API's suggested limits, capped at 10 s", () => {
@@ -162,4 +162,23 @@ test("upstream failures map to codes the browser can act on", async () => {
   assert.strictEqual((await classifyUpstreamFailure(err(503, "Execution queue unavailable"), usage(null))).body.code, "upstream_down");
   assert.strictEqual((await classifyUpstreamFailure(err(404, "Invalid API key"), usage(null))).body.code, "misconfigured");
   assert.strictEqual(await classifyUpstreamFailure(err(400, "Unknown compiler"), usage(null)), null, "400s are relayed as they are");
+});
+
+test("compiler ids: the local table is the fallback list, retired ids resolve", () => {
+  for (const id of ["python-3.14", "nodejs-24", "kotlin-2.4", "swift-6.4", "g++-15-cpp20", "bash-5.2", "r-4.6", "lua-5.5", "dotnet-csharp-10"]) {
+    assert.ok(localCompilers.ids.has(id), `${id} in the frontend table`);
+  }
+  assert.strictEqual(resolveCompiler("dotnet-csharp-9"), "dotnet-csharp-10", "an old room's id runs as its successor");
+  assert.strictEqual(resolveCompiler("sqlite-3"), null, "not in the local table (skipped for now)");
+  assert.strictEqual(resolveCompiler("nope"), null);
+  assert.strictEqual(resolveCompiler(42), null);
+});
+
+test("compiler ids: the API's list wins once loaded, with its retired map", () => {
+  const api = parseCompilerList({ compilers: [{ id: "python-3.14", name: "Python" }, { id: "zig-0.17", name: "Zig" }], retired: { "python-3.13": "python-3.14" } });
+  assert.strictEqual(resolveCompiler("zig-0.17", api), "zig-0.17", "any id the API lists is accepted");
+  assert.strictEqual(resolveCompiler("python-3.13", api), "python-3.14", "the API's retired map applies");
+  assert.strictEqual(resolveCompiler("dotnet-fsharp-9", api), null, "mapped by the local retired map, but the API doesn't list the successor");
+  assert.strictEqual(parseCompilerList({ compilers: [] }), null, "an empty list is ignored, keeping the last good one");
+  assert.strictEqual(parseCompilerList({ error: "x" }), null);
 });

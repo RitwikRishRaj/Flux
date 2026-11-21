@@ -1,0 +1,27 @@
+{
+  "compilers": [
+    { "id": "python-3.14", "label": "Python", "monaco": "python", "file": "main.py", "hello": "print(\"Hello from Flux\")" },
+    { "id": "nodejs-24", "label": "JavaScript", "monaco": "javascript", "file": "main.js", "hello": "console.log(\"Hello from Flux\");" },
+    { "id": "typescript-deno", "label": "TypeScript", "monaco": "typescript", "file": "main.ts", "hello": "console.log(\"Hello from Flux\");" },
+    { "id": "g++-15", "label": "C++", "monaco": "cpp", "file": "main.cpp", "hello": "#include <iostream>\nint main() {\n  std::cout << \"Hello from Flux\\n\";\n}" },
+    { "id": "g++-15-cpp20", "label": "C++20", "monaco": "cpp", "file": "main.cpp", "hello": "#include <format>\n#include <iostream>\nint main() {\n  std::cout << std::format(\"Hello from {}\\n\", \"Flux\");\n}" },
+    { "id": "gcc-15", "label": "C", "monaco": "c", "file": "main.c", "hello": "#include <stdio.h>\nint main(void) {\n  printf(\"Hello from Flux\\n\");\n}" },
+    { "id": "openjdk-25", "label": "Java", "monaco": "java", "file": "Main.java", "hello": "public class Main {\n  public static void main(String[] args) {\n    System.out.println(\"Hello from Flux\");\n  }\n}" },
+    { "id": "kotlin-2.4", "label": "Kotlin", "monaco": "kotlin", "file": "Main.kt", "hello": "fun main() {\n  println(\"Hello from Flux\")\n}" },
+    { "id": "go-1.26", "label": "Go", "monaco": "go", "file": "main.go", "hello": "package main\n\nimport \"fmt\"\n\nfunc main() {\n  fmt.Println(\"Hello from Flux\")\n}" },
+    { "id": "rust-1.93", "label": "Rust", "monaco": "rust", "file": "main.rs", "hello": "fn main() {\n  println!(\"Hello from Flux\");\n}" },
+    { "id": "swift-6.4", "label": "Swift", "monaco": "swift", "file": "main.swift", "hello": "print(\"Hello from Flux\")" },
+    { "id": "ruby-4.0", "label": "Ruby", "monaco": "ruby", "file": "main.rb", "hello": "puts \"Hello from Flux\"" },
+    { "id": "php-8.5", "label": "PHP", "monaco": "php", "file": "main.php", "hello": "<?php\necho \"Hello from Flux\\n\";" },
+    { "id": "dotnet-csharp-10", "label": "C#", "monaco": "csharp", "file": "Program.cs", "hello": "using System;\n\nConsole.WriteLine(\"Hello from Flux\");" },
+    { "id": "dotnet-fsharp-10", "label": "F#", "monaco": "fsharp", "file": "Program.fs", "hello": "printfn \"Hello from Flux\"" },
+    { "id": "haskell-9.12", "label": "Haskell", "monaco": "haskell", "file": "main.hs", "hello": "main = putStrLn \"Hello from Flux\"" },
+    { "id": "lua-5.5", "label": "Lua", "monaco": "lua", "file": "main.lua", "hello": "print(\"Hello from Flux\")" },
+    { "id": "r-4.6", "label": "R", "monaco": "r", "file": "main.R", "hello": "cat(\"Hello from Flux\\n\")" },
+    { "id": "bash-5.2", "label": "Bash", "monaco": "shell", "file": "main.sh", "hello": "echo \"Hello from Flux\"" }
+  ],
+  "retired": {
+    "dotnet-csharp-9": "dotnet-csharp-10",
+    "dotnet-fsharp-9": "dotnet-fsharp-10"
+  }
+}

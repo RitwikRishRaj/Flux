@@ -22,11 +22,42 @@ if (fs.existsSync(envPath)) {
 const API_KEY = process.env.ONLINECOMPILER_API_KEY;
 const PORT = Number(process.env.PORT) || 8788; // 8787 is wrangler dev's default (the sync server)
 
-const COMPILERS = new Set([
-  "python-3.14", "typescript-deno", "g++-15", "gcc-15", "openjdk-25",
-  "go-1.26", "rust-1.93", "ruby-4.0", "php-8.5", "dotnet-csharp-9",
-  "dotnet-fsharp-9", "haskell-9.12",
-]);
+// --- Compiler ids -------------------------------------------------------------------------------------------
+// The API's own list (GET /api/compilers/, no key needed) decides which ids are valid, refreshed hourly. Until it
+// loads, or when it can't be fetched, the frontend's compiler table is the fallback: one table for both.
+const LOCAL_TABLE_PATH = path.join(__dirname, "..", "frontend", "src", "lib", "compilers.json");
+const loadLocalTable = () => {
+  try {
+    const table = JSON.parse(fs.readFileSync(LOCAL_TABLE_PATH, "utf8"));
+    return { ids: new Set(table.compilers.map(c => c.id)), retired: table.retired ?? {} };
+  } catch {
+    return { ids: new Set(), retired: {} }; // backend deployed without the frontend: rely on the API's list
+  }
+};
+const localCompilers = loadLocalTable();
+let apiCompilers = null; // { ids: Set, retired: { oldId: newId } } once fetched
+
+// Shape of GET /api/compilers/: { compilers: [{ id, name, ... }], retired: { "dotnet-csharp-9": "dotnet-csharp-10" } }
+const parseCompilerList = (json) => {
+  if (!json || !Array.isArray(json.compilers)) return null;
+  const ids = new Set(json.compilers.map(c => c?.id).filter(id => typeof id === "string"));
+  return ids.size ? { ids, retired: json.retired && typeof json.retired === "object" ? json.retired : {} } : null;
+};
+
+const refreshCompilers = async () => {
+  try {
+    const res = await fetch("https://api.onlinecompiler.io/api/compilers/", { signal: AbortSignal.timeout(10_000) });
+    const parsed = res.ok ? parseCompilerList(await res.json()) : null;
+    if (parsed) apiCompilers = parsed; // a failed refresh keeps the last good list
+  } catch { /* keep the last good list, or the local table */ }
+};
+
+// The id to send upstream for one the browser sent: retired ids become the one they run as now; unknown → null.
+const resolveCompiler = (id, list = apiCompilers ?? localCompilers) => {
+  if (typeof id !== "string") return null;
+  const current = list.retired[id] ?? localCompilers.retired[id] ?? id;
+  return list.ids.has(current) ? current : null;
+};
 
 // --- Limits -----------------------------------------------------------------------------------------------
 // The account runs at most 4 programs at once (docs/limits); more and a sync request gets 429. So the backend
@@ -254,11 +285,13 @@ const readRunRequest = async (req, res, maxBytes) => {
     else json(res, 400, { error: "Invalid JSON" });
     return null;
   }
-  const { compiler, code, room, run_id } = body ?? {};
+  const { code, room, run_id } = body ?? {};
   const fail = (error) => (json(res, 400, { error }), null);
   if (typeof room !== "string" || !ROOM_RE.test(room)) return fail("Missing or invalid room");
   if (typeof run_id !== "string" || !RUN_ID_RE.test(run_id)) return fail("Missing or invalid run_id");
-  if (!COMPILERS.has(compiler)) return fail("Unknown compiler");
+  const compiler = resolveCompiler(body?.compiler);
+  if (!compiler) return fail("Unknown compiler");
+  body.compiler = compiler;
   if (typeof code !== "string" || !code.trim()) return fail("Code is required");
   if (code.length > 100_000) return fail("Code exceeds 100KB");
   if (/[\x00-\x08\x0E-\x1F]/.test(code)) return fail("Code contains invalid characters");
@@ -282,8 +315,8 @@ const server = http.createServer(async (req, res) => {
 
   // How many tests the client should send per /run-tests batch so each gets the full time limit.
   if (req.method === "GET" && req.url.startsWith("/run-tests/plan?")) {
-    const compiler = new URL(req.url, "http://localhost").searchParams.get("compiler");
-    if (!COMPILERS.has(compiler)) return json(res, 400, { error: "Unknown compiler" });
+    const compiler = resolveCompiler(new URL(req.url, "http://localhost").searchParams.get("compiler"));
+    if (!compiler) return json(res, 400, { error: "Unknown compiler" });
     return json(res, 200, { batch_size: maxBatchSize(compiler), time_limit: TEST_TIME_LIMIT });
   }
 
@@ -318,9 +351,12 @@ const server = http.createServer(async (req, res) => {
 module.exports = {
   testTimeLimit, maxBatchSize, suggestedTimeLimit, runTestsWithRetry, sanitize,
   acquireSlots, releaseSlots, BusyError, lockRoom, unlockRoom, sweepRoomLocks, roomLocks, classifyUpstreamFailure,
-  nextBatchWillCome, ROOM_RE,
+  nextBatchWillCome, ROOM_RE, parseCompilerList, resolveCompiler, localCompilers,
 };
 if (require.main !== module) return; // imported by the tests: don't start the server
+
+refreshCompilers();
+setInterval(refreshCompilers, 60 * 60 * 1000).unref();
 
 server.listen(PORT, () => {
   console.log(`flux-backend listening on :${PORT}${API_KEY && API_KEY !== "PASTE_YOUR_KEY_HERE" ? "" : " (no API key set yet)"}`);

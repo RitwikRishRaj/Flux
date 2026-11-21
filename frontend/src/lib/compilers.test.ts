@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { COMPILERS, isEmptyOrStarter, describeExit, formatSeconds, formatMemory } from "./compilers";
+import { COMPILERS, byId, isEmptyOrStarter, describeExit, formatSeconds, formatMemory } from "./compilers";
 
 describe("isEmptyOrStarter", () => {
   it("allows replacing empty or whitespace-only code", () => {
@@ -45,5 +45,14 @@ describe("formatSeconds and formatMemory", () => {
     expect(formatMemory("640")).toBe("640 KB");
     expect(formatMemory("x")).toBe(null);
     expect(formatMemory("0")).toBe(null);
+  });
+});
+
+describe("byId", () => {
+  it("finds a language, maps retired ids, and never returns nothing", () => {
+    expect(byId("kotlin-2.4").monaco).toBe("kotlin");
+    expect(byId("dotnet-csharp-9").id).toBe("dotnet-csharp-10");
+    expect(byId("dotnet-fsharp-9").id).toBe("dotnet-fsharp-10");
+    expect(byId("not-a-language").id).toBe(COMPILERS[0].id);
   });
 });
