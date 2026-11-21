@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { callRunApi, messageFor } from "./run-api";
+import { bannerFor, callRunApi, messageFor } from "./run-api";
 
 // Replaces fetch with a list of canned answers; returns the bodies that were sent.
 const fakeFetch = (answers: Array<{ status: number; body: unknown } | "throw">) => {
@@ -62,5 +62,22 @@ describe("messageFor", () => {
     expect(messageFor("upstream_timeout", {}, 504)).toBe("The code runner took too long to answer. Try again.");
     expect(messageFor("", { error: "Unknown compiler" }, 400)).toBe("Unknown compiler");
     expect(messageFor("", {}, 418)).toBe("Request failed (418)");
+  });
+});
+
+describe("bannerFor", () => {
+  const base = { runs_left: 50_000, monthly_limit: 100_000, resets_at: "2026-12-01T00:00:00Z", service: "ok" as const, checked_at: "" };
+  it("shows nothing when all is well, or when nothing is known", () => {
+    expect(bannerFor(base)).toBeNull();
+    expect(bannerFor(null)).toBeNull();
+    expect(bannerFor({ ...base, runs_left: null, monthly_limit: null, service: "unknown" })).toBeNull();
+  });
+  it("warns under 10% of the month's runs, and at zero", () => {
+    expect(bannerFor({ ...base, runs_left: 10_000 })).toBeNull();
+    expect(bannerFor({ ...base, runs_left: 9_999 })).toContain("free runs left this month. They reset on");
+    expect(bannerFor({ ...base, runs_left: 0 })).toContain("Flux has used this month's free runs.");
+  });
+  it("puts the service being down first", () => {
+    expect(bannerFor({ ...base, runs_left: 5, service: "down" })).toContain("The code runner is having problems right now");
   });
 });

@@ -1,4 +1,4 @@
-// Flux backend: holds the onlinecompiler key and proxies /run and /run-tests.
+// Flux backend: holds the onlinecompiler key, proxies /run and /run-tests, and serves /status for the room banner.
 // Zero dependencies — Node 18+ (uses global fetch).
 const http = require("node:http");
 const fs = require("node:fs");
@@ -230,6 +230,53 @@ const fetchUsage = async () => {
   return res.json();
 };
 
+// --- Status for the room banner ------------------------------------------------------------------------------
+// Runs left (GET /api/usage/) and service health (GET /api/health/), cached 60 s: however many rooms are open,
+// the API sees at most one pair of calls a minute. Neither call spends runs (docs/limits).
+const STATUS_TTL_MS = 60_000;
+let statusCache = { at: 0, body: null, pending: null };
+
+const fetchHealth = async () => {
+  try {
+    const res = await fetch("https://api.onlinecompiler.io/api/health/", { signal: AbortSignal.timeout(10_000) });
+    return await res.json(); // 200 when every check is ok, 503 with the same shape when not
+  } catch {
+    return { status: "down" }; // if Flux can't reach the API, runs fail too
+  }
+};
+
+// { runs_left, monthly_limit, resets_at, service: "ok" | "down" | "unknown", checked_at }. runs_left uses the
+// tighter of the account's allowance and the key's own monthly limit, when the key has one.
+const summarizeStatus = (usage, health, now = new Date()) => {
+  const pools = [usage, usage?.key].filter(p => p && Number.isFinite(p.remaining) && Number.isFinite(p.monthly_limit) && p.monthly_limit > 0);
+  const tightest = pools.sort((a, b) => a.remaining / a.monthly_limit - b.remaining / b.monthly_limit)[0];
+  return {
+    runs_left: tightest ? tightest.remaining : null,
+    monthly_limit: tightest ? tightest.monthly_limit : null,
+    resets_at: typeof usage?.resets_at === "string" ? usage.resets_at : null,
+    service: health?.status === "ok" ? "ok" : health?.status === "down" ? "down" : "unknown",
+    checked_at: now.toISOString(),
+  };
+};
+
+const loadStatus = async () => {
+  const [usage, health] = await Promise.all([fetchUsage().catch(() => null), fetchHealth()]);
+  return summarizeStatus(usage, health);
+};
+
+// Serves the cached status while fresh; concurrent requests share one load. load and clock are passed in by the tests.
+const getStatus = (load = loadStatus, now = Date.now()) => {
+  if (statusCache.body && now - statusCache.at < STATUS_TTL_MS) return Promise.resolve(statusCache.body);
+  if (!statusCache.pending) {
+    statusCache.pending = load().then(
+      body => { statusCache = { at: Date.now(), body, pending: null }; return body; },
+      err => { statusCache.pending = null; throw err; },
+    );
+  }
+  return statusCache.pending;
+};
+const resetStatusCache = () => { statusCache = { at: 0, body: null, pending: null }; };
+
 const postUpstream = async (path, payload, timeoutMs) => {
   const upstream = await fetch(`https://api.onlinecompiler.io${path}`, {
     method: "POST",
@@ -313,6 +360,11 @@ const server = http.createServer(async (req, res) => {
       () => postUpstream("/api/run-code-sync/", { compiler, code, input: sanitize(input) }, 40_000));
   }
 
+  if (req.method === "GET" && req.url === "/status") {
+    try { return json(res, 200, await getStatus()); }
+    catch { return json(res, 502, { code: "upstream_down", error: "Status unavailable." }); }
+  }
+
   // How many tests the client should send per /run-tests batch so each gets the full time limit.
   if (req.method === "GET" && req.url.startsWith("/run-tests/plan?")) {
     const compiler = resolveCompiler(new URL(req.url, "http://localhost").searchParams.get("compiler"));
@@ -352,6 +404,7 @@ module.exports = {
   testTimeLimit, maxBatchSize, suggestedTimeLimit, runTestsWithRetry, sanitize,
   acquireSlots, releaseSlots, BusyError, lockRoom, unlockRoom, sweepRoomLocks, roomLocks, classifyUpstreamFailure,
   nextBatchWillCome, ROOM_RE, parseCompilerList, resolveCompiler, localCompilers,
+  summarizeStatus, getStatus, resetStatusCache, STATUS_TTL_MS,
 };
 if (require.main !== module) return; // imported by the tests: don't start the server
 

@@ -70,3 +70,22 @@ export async function callRunApi(
     return { ok: false, code, message: messageFor(code, data, res.status) };
   }
 }
+
+// What GET /api/backend/status returns (backend/server.js summarizeStatus).
+export type RunStatus = {
+  runs_left: number | null; monthly_limit: number | null; resets_at: string | null;
+  service: "ok" | "down" | "unknown"; checked_at: string;
+};
+
+// The room's one-line banner: the service being down comes first, then fewer than 10% of the month's runs left.
+export const bannerFor = (status: RunStatus | null): string | null => {
+  if (!status) return null;
+  if (status.service === "down") return "The code runner is having problems right now, so runs may fail. Check status.onlinecompiler.io.";
+  const { runs_left, monthly_limit, resets_at } = status;
+  if (runs_left === null || !monthly_limit || runs_left / monthly_limit >= 0.1) return null;
+  const resets = resets_at ? new Date(resets_at) : null;
+  const until = resets && !isNaN(resets.getTime()) ? ` They reset on ${resets.toLocaleDateString(undefined, { day: "numeric", month: "long" })}.` : "";
+  return runs_left === 0
+    ? `Flux has used this month's free runs.${until}`
+    : `Flux has ${runs_left.toLocaleString()} free runs left this month.${until}`;
+};

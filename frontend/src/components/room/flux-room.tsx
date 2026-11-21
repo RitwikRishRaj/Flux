@@ -9,7 +9,7 @@ import { ArrowLeft, Check, ChevronDown, Link2, Loader2, Play, SquareTerminal, Fl
 import { COMPILERS, RETIRED, byId, isEmptyOrStarter, describeExit, formatSeconds, formatMemory, type CompilerId, type RunResult } from "@/lib/compilers";
 import { FLUX_THEME } from "@/lib/flux-monaco";
 import { connect } from "@/lib/party";
-import { callRunApi } from "@/lib/run-api";
+import { bannerFor, callRunApi, type RunStatus } from "@/lib/run-api";
 import { TestsTab } from "@/components/tests-tab";
 import type { TestCase, TestResult, TestRunState } from "@/components/tests-tab";
 import { WebStudio } from "@/components/room/web-studio";
@@ -47,6 +47,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
   const [conn, setConn] = useState<{ doc: Y.Doc; awareness: any; whenSynced: (cb: () => void) => () => void } | null>(null);
   const [offerStarter, setOfferStarter] = useState<CompilerId | null>(null);
   const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
+  const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const editorRef = useRef<monacoNS.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monacoNS.editor.ITextModel | null>(null);
   const stdinEditorRef = useRef<monacoNS.editor.IStandaloneCodeEditor | null>(null);
@@ -167,6 +168,23 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
     } catch { /* blocked */ }
   };
 
+  // Runs left and service health for the banner. The backend caches /status for 60 s, so polling at that pace
+  // costs the API nothing extra however many rooms are open; hidden tabs skip it.
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      if (document.hidden) return;
+      fetch("/api/backend/status")
+        .then(r => (r.ok ? (r.json() as Promise<Record<string, unknown>>) : null))
+        .then(d => { if (active && d && typeof d.service === "string") setRunStatus(d as unknown as RunStatus); })
+        .catch(() => { /* no banner rather than a wrong one */ });
+    };
+    load();
+    const timer = setInterval(load, 60_000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
+  const banner = bannerFor(runStatus);
+
   // Each new notice restarts the timer, so back-to-back switches show the latest for the full time.
   useEffect(() => {
     if (!notice) return;
@@ -278,6 +296,12 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
           </span>
         </button>
       </header>
+
+      {banner && (
+        <p role="status" title={banner} className="flux-enter shrink-0 truncate rounded-full bg-amber-500/[0.08] px-4 py-2 text-[13px] text-amber-200/90">
+          {banner}
+        </p>
+      )}
 
       {mode === "web" && conn && <WebStudio doc={conn.doc} awareness={conn.awareness} whenSynced={conn.whenSynced} />}
 

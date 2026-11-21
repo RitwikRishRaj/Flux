@@ -6,6 +6,7 @@ const {
   testTimeLimit, maxBatchSize, suggestedTimeLimit, runTestsWithRetry, sanitize,
   acquireSlots, releaseSlots, BusyError, lockRoom, unlockRoom, sweepRoomLocks, roomLocks, classifyUpstreamFailure,
   nextBatchWillCome, ROOM_RE, parseCompilerList, resolveCompiler, localCompilers,
+  summarizeStatus, getStatus, resetStatusCache, STATUS_TTL_MS,
 } = require("./server.js");
 
 test("testTimeLimit matches the API's suggested limits, capped at 10 s", () => {
@@ -181,4 +182,32 @@ test("compiler ids: the API's list wins once loaded, with its retired map", () =
   assert.strictEqual(resolveCompiler("dotnet-fsharp-9", api), null, "mapped by the local retired map, but the API doesn't list the successor");
   assert.strictEqual(parseCompilerList({ compilers: [] }), null, "an empty list is ignored, keeping the last good one");
   assert.strictEqual(parseCompilerList({ error: "x" }), null);
+});
+
+test("status: runs left uses the tighter of account and key; health maps to ok/down/unknown", () => {
+  const usage = { remaining: 95_000, monthly_limit: 100_000, resets_at: "2026-12-01T00:00:00Z", key: { remaining: 200, monthly_limit: 5_000 } };
+  const s = summarizeStatus(usage, { status: "ok" });
+  assert.deepStrictEqual([s.runs_left, s.monthly_limit, s.resets_at, s.service], [200, 5_000, "2026-12-01T00:00:00Z", "ok"], "the key's 4% beats the account's 95%");
+  assert.strictEqual(summarizeStatus({ ...usage, key: { remaining: null, monthly_limit: null } }, { status: "ok" }).runs_left, 95_000, "a key with no limit is ignored");
+  assert.strictEqual(summarizeStatus(usage, { status: "down", checks: { sandbox: "failed" } }).service, "down");
+  assert.strictEqual(summarizeStatus(null, null).service, "unknown");
+  assert.strictEqual(summarizeStatus(null, { status: "ok" }).runs_left, null, "usage unreadable (e.g. no key): no runs-left figure");
+});
+
+test("status: cached for 60 s, and concurrent requests share one load", async () => {
+  resetStatusCache();
+  let loads = 0;
+  const load = async () => { loads++; await new Promise(r => setTimeout(r, 20)); return { service: "ok", n: loads }; };
+  const [a, b] = await Promise.all([getStatus(load), getStatus(load)]);
+  assert.strictEqual(loads, 1, "two requests at once, one load");
+  assert.strictEqual(a, b);
+  await getStatus(load, Date.now() + STATUS_TTL_MS - 1000);
+  assert.strictEqual(loads, 1, "still fresh inside 60 s");
+  const later = await getStatus(load, Date.now() + STATUS_TTL_MS + 1000);
+  assert.strictEqual(loads, 2, "reloaded after 60 s");
+  assert.strictEqual(later.n, 2);
+  resetStatusCache();
+  await assert.rejects(getStatus(async () => { throw new Error("down"); }));
+  assert.strictEqual((await getStatus(load)).service, "ok", "a failed load isn't cached");
+  resetStatusCache();
 });
