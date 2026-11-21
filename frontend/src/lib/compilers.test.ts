@@ -40,6 +40,7 @@ describe("formatSeconds and formatMemory", () => {
     expect(formatSeconds("0.0248")).toBe("0.02 s");
     expect(formatSeconds("12.345")).toBe("12.3 s");
     expect(formatSeconds("")).toBe(null);
+    expect(formatSeconds("0.0000")).toBe(null);
     expect(formatMemory("8192")).toBe("8 MB");
     expect(formatMemory("640")).toBe("640 KB");
     expect(formatMemory("x")).toBe(null);

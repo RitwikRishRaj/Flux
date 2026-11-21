@@ -2,6 +2,7 @@
 
 import { memo, useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { callRunApi } from "@/lib/run-api";
 import { Plus, Trash2, Play, Check, X, AlertCircle, Clock, ChevronDown, ChevronUp } from "lucide-react";
 
 export interface TestCase {
@@ -353,6 +354,7 @@ export function TestsTab({
   testRunRef,
   awarenessRef,
   user,
+  roomId,
 }: {
   tests: TestCase[];
   compiler: string;
@@ -365,6 +367,7 @@ export function TestsTab({
   testRunRef: React.MutableRefObject<any>;
   awarenessRef: React.MutableRefObject<any>;
   user: { id: string; name: string };
+  roomId: string;
 }) {
   // A run is in progress while the shared testRun has no finishedAt; that survives this tab remounting and covers
   // everyone. selfRunning covers the moment before the run is written (while the batch size is fetched).
@@ -410,22 +413,21 @@ export function TestsTab({
     for (let b = 0; b < batches.length && !error && !compileError; b++) {
       const batch = batches[b];
       testRunRef.current?.set("batchIndex", b + 1);
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
-        const res = await fetch("/api/backend/run-tests", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ compiler, code, tests: batch.map(tc => ({ input: tc.stdin, expected_output: tc.expectedOutput })) }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        // Every field is checked before use; the API's answer is untrusted input.
-        const data = (await res.json().catch(() => ({}))) as Record<string, any>;
+      // room + run_id: the server allows one run per room; batches of this run share its lock (final releases it).
+      const call = await callRunApi("/run-tests", {
+        compiler, code, room: roomId, run_id: runId, final: b === batches.length - 1,
+        tests: batch.map(tc => ({ input: tc.stdin, expected_output: tc.expectedOutput })),
+      }, { timeoutMs: CLIENT_TIMEOUT_MS, onRetry: () => testRunRef.current?.set("error", "The run queue is busy, retrying…") });
 
-        if (!res.ok) {
-          error = typeof data.error === "string" ? data.error : `Request failed (${res.status})`;
-        } else {
+      if (!call.ok) {
+        // Leaving the page aborts the request before pagehide fires. Wait a moment: if the page is going away it
+        // is gone by then and writes nothing, and the others mark the run interrupted when this client disappears.
+        if (call.code === "network") await new Promise(r => setTimeout(r, 500));
+        error = call.message;
+      } else {
+          // Every field is checked before use; the API's answer is untrusted input.
+          const data = call.data;
+          testRunRef.current?.set("error", null); // clears a "retrying…" note
           if (typeof data.time_limit === "number") timeLimit = Math.min(timeLimit ?? Infinity, data.time_limit);
           if (typeof data.compile_error === "string") compileError = data.compile_error.slice(0, 20000);
           // Results come back in the order the tests were sent (docs/run-tests).
@@ -442,16 +444,6 @@ export function TestsTab({
               truncated: r.truncated === true,
             };
           });
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-          error = `No answer after ${CLIENT_TIMEOUT_MS / 1000} s. Try again.`;
-        } else {
-          // Leaving the page aborts the request before pagehide fires. Wait a moment: if the page is going away it
-          // is gone by then and writes nothing, and the others mark the run interrupted when this client disappears.
-          await new Promise(r => setTimeout(r, 500));
-          error = "Couldn't reach the run server.";
-        }
       }
       if (error && batches.length > 1) error = `Batch ${b + 1} of ${batches.length}: ${error}`;
       // The same code won't compile in later batches either, so mark them without spending runs on them.

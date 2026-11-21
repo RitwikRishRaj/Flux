@@ -1,7 +1,12 @@
-// Run with: npm test (node --test). No network: the API is replaced by a fake post().
+// Run with: npm test (node --test). No network: the API is replaced by fakes.
 const test = require("node:test");
 const assert = require("node:assert");
-const { testTimeLimit, maxBatchSize, suggestedTimeLimit, runTestsWithRetry, sanitize } = require("./server.js");
+process.env.FLUX_QUEUE_WAIT_MS = "200"; // set before loading server.js, so "busy" takes 0.2 s here, not 10 s
+const {
+  testTimeLimit, maxBatchSize, suggestedTimeLimit, runTestsWithRetry, sanitize,
+  acquireSlots, releaseSlots, BusyError, lockRoom, unlockRoom, sweepRoomLocks, roomLocks, classifyUpstreamFailure,
+  nextBatchWillCome, ROOM_RE,
+} = require("./server.js");
 
 test("testTimeLimit matches the API's suggested limits, capped at 10 s", () => {
   // [compiler, tests, largest time_limit the API accepted], from its 400 refusals
@@ -63,4 +68,98 @@ test("sanitize turns CRLF into LF and drops control characters", () => {
   assert.strictEqual(sanitize("1 2\r\n3 4\r\n"), "1 2\n3 4\n");
   assert.strictEqual(sanitize("a\tb\x00c\x07"), "a\tbc");
   assert.strictEqual(sanitize(42), "");
+});
+
+test("slots: a full cap queues, and a freed slot lets the next request in", async () => {
+  assert.strictEqual(await acquireSlots(4), 4); // all four taken (a 16-test batch)
+  let got = null;
+  const waiter = acquireSlots(1).then(n => { got = n; });
+  await new Promise(r => setTimeout(r, 50));
+  assert.strictEqual(got, null, "waits while every slot is taken");
+  releaseSlots(4);
+  await waiter;
+  assert.strictEqual(got, 1, "starts once a slot frees up");
+  releaseSlots(1);
+});
+
+test("slots: waiting longer than the queue time rejects as busy", async () => {
+  await acquireSlots(4);
+  const t0 = Date.now();
+  await assert.rejects(acquireSlots(1), BusyError);
+  assert.ok(Date.now() - t0 >= 180, "waited for the queue time first");
+  releaseSlots(4);
+  assert.strictEqual(await acquireSlots(4), 4, "every slot is free again afterwards");
+  releaseSlots(4);
+});
+
+test("slots: a batch takes what is free, so nothing waits behind it while a slot is free", async () => {
+  assert.strictEqual(await acquireSlots(1), 1);  // a long /run in another room
+  assert.strictEqual(await acquireSlots(4), 3, "the batch starts at once with the 3 free slots");
+  let got = null;
+  const run = acquireSlots(1).then(n => { got = n; });
+  await new Promise(r => setTimeout(r, 50));
+  assert.strictEqual(got, null, "now everything is taken, so the next /run waits");
+  releaseSlots(1);                               // the long /run ends
+  await run;
+  assert.strictEqual(got, 1, "and gets the freed slot");
+  releaseSlots(1); releaseSlots(3);
+  assert.strictEqual(await acquireSlots(4), 4, "all slots accounted for");
+  releaseSlots(4);
+});
+
+test("room lock: one run per room; its own requests pass; kept only for a coming request", () => {
+  roomLocks.clear();
+  assert.strictEqual(lockRoom("roomAAAA", "run-1"), true);
+  assert.strictEqual(lockRoom("roomAAAA", "run-2"), false, "another run in the same room is refused");
+  assert.strictEqual(lockRoom("roomBBBB", "run-2"), true, "other rooms are independent");
+  unlockRoom("roomBBBB", 0);
+
+  unlockRoom("roomAAAA", 10_000);               // batch 1 of run-1 done, more to come
+  assert.strictEqual(lockRoom("roomAAAA", "run-2"), false, "kept between batches");
+  assert.strictEqual(lockRoom("roomAAAA", "run-1"), true, "run-1's next batch passes");
+  unlockRoom("roomAAAA", 0);                    // final batch
+  assert.strictEqual(roomLocks.has("roomAAAA"), false, "released after the final batch");
+  assert.strictEqual(lockRoom("roomAAAA", "run-2"), true, "free for the next run");
+  unlockRoom("roomAAAA", 0);
+});
+
+test("room lock: a kept lock whose next request never came expires and is swept", () => {
+  roomLocks.clear();
+  lockRoom("roomCCCC", "run-1");
+  unlockRoom("roomCCCC", 10_000);
+  roomLocks.get("roomCCCC").heldUntil = Date.now() - 1; // as if the gap had passed
+  assert.strictEqual(lockRoom("roomCCCC", "run-2"), true, "an expired lock doesn't block");
+  unlockRoom("roomCCCC", 10_000);
+  roomLocks.get("roomCCCC").heldUntil = Date.now() - 1;
+  sweepRoomLocks();
+  assert.strictEqual(roomLocks.size, 0, "sweep removes it");
+});
+
+test("the lock is kept for a next batch only when one will come", () => {
+  const ok = (body) => ({ status: 200, text: JSON.stringify(body) });
+  assert.strictEqual(nextBatchWillCome(ok({ verdict: "accepted", compile_error: null })), true);
+  assert.strictEqual(nextBatchWillCome(ok({ verdict: "compilation_error", compile_error: "code.cc:2: error" })), false, "the browser stops after a compile error");
+  assert.strictEqual(nextBatchWillCome({ status: 400, text: JSON.stringify({ error: "use time_limit 2 or less" }) }), false, "or after a refusal");
+  assert.strictEqual(nextBatchWillCome({ status: 200, text: "not json" }), false);
+});
+
+test("room ids: anything the room page can open, but no control characters", () => {
+  for (const ok of ["reproRoom42", "my-room", "room_1", "a", "Ünïcødé"]) assert.ok(ROOM_RE.test(ok), ok);
+  for (const bad of ["", "x".repeat(129), "a\nb", "a\x00b"]) assert.ok(!ROOM_RE.test(bad), JSON.stringify(bad));
+});
+
+test("upstream failures map to codes the browser can act on", async () => {
+  const err = (status, error) => ({ status, text: JSON.stringify({ error }) });
+  const usage = (u) => async () => u;
+  const busy = await classifyUpstreamFailure(err(429, "Too many runs at once"), usage({ remaining: 5000, resets_at: "2026-12-01T00:00:00Z" }));
+  assert.deepStrictEqual([busy.status, busy.body.code], [503, "busy"]);
+  const cap = await classifyUpstreamFailure(err(429, "Monthly limit"), usage({ remaining: 0, resets_at: "2026-12-01T00:00:00Z" }));
+  assert.deepStrictEqual([cap.status, cap.body.code, cap.body.resets_at], [429, "monthly_cap", "2026-12-01T00:00:00Z"]);
+  const keyCap = await classifyUpstreamFailure(err(429, "Key limit"), usage({ remaining: 900, key: { remaining: 0 } }));
+  assert.strictEqual(keyCap.body.code, "monthly_cap");
+  const unknown = await classifyUpstreamFailure(err(429, "?"), async () => { throw new Error("offline"); });
+  assert.strictEqual(unknown.body.code, "busy", "if usage can't be read, assume busy (the client retries once)");
+  assert.strictEqual((await classifyUpstreamFailure(err(503, "Execution queue unavailable"), usage(null))).body.code, "upstream_down");
+  assert.strictEqual((await classifyUpstreamFailure(err(404, "Invalid API key"), usage(null))).body.code, "misconfigured");
+  assert.strictEqual(await classifyUpstreamFailure(err(400, "Unknown compiler"), usage(null)), null, "400s are relayed as they are");
 });

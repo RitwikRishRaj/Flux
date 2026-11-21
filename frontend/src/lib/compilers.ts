@@ -56,9 +56,10 @@ export const describeExit = (exitCode: number, signal: number | null, timeLimit?
   }
 };
 
+// 0 means not measured (a run stopped at the time limit reports "0.0000"), so it shows nothing.
 export const formatSeconds = (time: string) => {
   const s = parseFloat(time);
-  return Number.isFinite(s) ? `${s < 10 ? s.toFixed(2) : s.toFixed(1)} s` : null;
+  return Number.isFinite(s) && s > 0 ? `${s < 10 ? s.toFixed(2) : s.toFixed(1)} s` : null;
 };
 
 // 0 means not measured (e.g. a run killed for memory reports "0"), so it shows nothing rather than "0 KB".

@@ -9,6 +9,7 @@ import { ArrowLeft, Check, ChevronDown, Link2, Loader2, Play, SquareTerminal, Fl
 import { COMPILERS, byId, isEmptyOrStarter, describeExit, formatSeconds, formatMemory, type CompilerId, type RunResult } from "@/lib/compilers";
 import { FLUX_THEME } from "@/lib/flux-monaco";
 import { connect } from "@/lib/party";
+import { callRunApi } from "@/lib/run-api";
 import { TestsTab } from "@/components/tests-tab";
 import type { TestCase, TestResult, TestRunState } from "@/components/tests-tab";
 import { WebStudio } from "@/components/room/web-studio";
@@ -100,16 +101,16 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
     
     try {
       const currentStdin = stdinRef.current?.toString().slice(0, 20000) || "";
-      const res = await fetch("/api/backend/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ compiler: compilerId, code: editorRef.current?.getValue() ?? code, input: currentStdin }),
-      });
-      const data = (await res.json()) as RunResult & { error?: string };
-      
-      if (!res.ok) {
-        setNetErr(data.error ?? `Request failed (${res.status})`);
+      // room + run_id: the server runs one program per room at a time.
+      const call = await callRunApi("/run", {
+        compiler: compilerId, code: editorRef.current?.getValue() ?? code, input: currentStdin, room: id, run_id: runId,
+      }, { onRetry: () => setNetErr("The run queue is busy, retrying…") });
+
+      if (!call.ok) {
+        setNetErr(call.message);
       } else {
+        setNetErr(null); // clears a "retrying…" note
+        const data = call.data as RunResult;
         // Write to shared Y.Map, with what the status line needs (fields per docs/run-code)
         if (lastRunRef.current) {
           lastRunRef.current.doc!.transact(() => {
@@ -129,8 +130,6 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
           });
         }
       }
-    } catch {
-      setNetErr("Could not reach backend on :8788");
     } finally {
       setRunning(false);
       awarenessRef.current?.setLocalStateField("running", null);
@@ -500,6 +499,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                         states.forEach((state: any) => { if (state.running?.runId === runId) alive = true; });
                         if (!alive) {
                           tr.set("interrupted", true);
+                          tr.set("error", null); // a "retrying…" note from the runner would otherwise stay up
                           tr.set("finishedAt", Date.now());
                         }
                       }
@@ -663,6 +663,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                     testRunRef={testRunRef}
                     awarenessRef={awarenessRef}
                     user={user}
+                    roomId={id}
                   />
                 </motion.div>
               )}

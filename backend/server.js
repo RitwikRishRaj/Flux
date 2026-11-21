@@ -1,4 +1,4 @@
-// Flux backend: holds the onlinecompiler key and proxies /run.
+// Flux backend: holds the onlinecompiler key and proxies /run and /run-tests.
 // Zero dependencies — Node 18+ (uses global fetch).
 const http = require("node:http");
 const fs = require("node:fs");
@@ -28,10 +28,82 @@ const COMPILERS = new Set([
   "dotnet-fsharp-9", "haskell-9.12",
 ]);
 
-// Rate limiting: trace requests per IP
-const limits = new Map();
-const RATE_LIMIT = 10; // requests per minute
-const RATE_WINDOW = 60000; // 1 minute
+// --- Limits -----------------------------------------------------------------------------------------------
+// The account runs at most 4 programs at once (docs/limits); more and a sync request gets 429. So the backend
+// keeps its own requests within 4 sandbox slots and queues the rest briefly. Env overrides exist for testing.
+const MAX_SLOTS = Number(process.env.FLUX_MAX_SLOTS) || 4;
+const QUEUE_WAIT_MS = Number(process.env.FLUX_QUEUE_WAIT_MS) || 10_000;
+const MAX_QUEUE = 16;
+
+class BusyError extends Error {}
+
+let freeSlots = MAX_SLOTS;
+const waiting = []; // FIFO of { want, resolve, timer }
+
+const take = (want) => { const got = Math.min(want, freeSlots); freeSlots -= got; return got; };
+
+const grantWaiting = () => {
+  while (waiting.length && freeSlots >= 1) {
+    const next = waiting.shift();
+    clearTimeout(next.timer);
+    next.resolve(take(next.want));
+  }
+};
+
+// Resolves with how many slots it got: 1 up to `want`, as soon as one is free. A batch that gets fewer than it
+// wanted still works (the API runs its tests in more rounds; late ones may come back skipped), and nothing waits
+// behind a big request while a slot sits free. Rejects with BusyError after QUEUE_WAIT_MS, or if the queue is full.
+const acquireSlots = (want) => new Promise((resolve, reject) => {
+  if (waiting.length === 0 && freeSlots >= 1) return resolve(take(want));
+  if (waiting.length >= MAX_QUEUE) return reject(new BusyError());
+  const entry = { want, resolve, timer: null };
+  entry.timer = setTimeout(() => {
+    waiting.splice(waiting.indexOf(entry), 1);
+    reject(new BusyError());
+  }, QUEUE_WAIT_MS);
+  waiting.push(entry);
+});
+
+const releaseSlots = (got) => { freeSlots += got; grantWaiting(); };
+
+// One run per room. Requests of the same run (same run_id) share the lock. It is kept briefly only when this run
+// will send another request: BATCH_GAP_MS after a non-final batch that succeeded, RETRY_GAP_MS after a "busy"
+// (the browser retries once after 3 s). Otherwise (a /run, a final batch, a compile error, a failure) it is released.
+const BATCH_GAP_MS = 10_000;
+const RETRY_GAP_MS = 5_000;
+const roomLocks = new Map(); // room → { runId, active, heldUntil }
+
+const lockRoom = (room, runId) => {
+  const lock = roomLocks.get(room);
+  const held = lock && (lock.active > 0 || Date.now() < lock.heldUntil);
+  if (held && lock.runId !== runId) return false;
+  if (held) lock.active++;
+  else roomLocks.set(room, { runId, active: 1, heldUntil: 0 });
+  return true;
+};
+
+const unlockRoom = (room, keepForMs) => {
+  const lock = roomLocks.get(room);
+  if (!lock) return;
+  lock.active--;
+  if (lock.active === 0) {
+    if (keepForMs > 0) lock.heldUntil = Date.now() + keepForMs;
+    else roomLocks.delete(room);
+  }
+};
+
+// After a non-final batch, the browser sends the next one unless this one failed to compile (it stops there).
+const nextBatchWillCome = (result) => {
+  if (result.status < 200 || result.status >= 300) return false;
+  try { return typeof JSON.parse(result.text).compile_error !== "string"; } catch { return false; }
+};
+
+// Locks kept for a next batch that never came would pile up; sweep them once a minute.
+const sweepRoomLocks = () => {
+  const now = Date.now();
+  for (const [room, lock] of roomLocks) if (lock.active === 0 && now >= lock.heldUntil) roomLocks.delete(room);
+};
+setInterval(sweepRoomLocks, 60_000).unref();
 
 const json = (res, status, obj) => {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -56,18 +128,6 @@ const readBody = (req, maxBytes = 250_000) =>
 const sanitize = (str) => {
   if (typeof str !== "string") return "";
   return str.replace(/\r\n/g, "\n").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").substring(0, 100_000);
-};
-
-const checkRateLimit = (ip) => {
-  const now = Date.now();
-  const entry = limits.get(ip);
-  if (!entry || now - entry.window > RATE_WINDOW) {
-    limits.set(ip, { count: 1, window: now });
-    return true;
-  }
-  if (entry.count >= RATE_LIMIT) return false;
-  entry.count++;
-  return true;
 };
 
 // Run-tests: one request judges every case (https://onlinecompiler.io/docs/run-tests).
@@ -111,6 +171,34 @@ const runTestsWithRetry = async (payload, post) => {
   return post({ ...payload, time_limit: advice });
 };
 
+const usageUrl = "https://api.onlinecompiler.io/api/usage/";
+
+// A 429 means either "all 4 runs busy" or "monthly allowance used" (docs/limits); /api/usage/ (free) tells which.
+// getUsage is passed in so the tests can run without the network.
+const classifyUpstreamFailure = async ({ status, text }, getUsage) => {
+  let message = "";
+  try { message = JSON.parse(text).error ?? ""; } catch { /* not JSON */ }
+  if (status === 429) {
+    const usage = await getUsage().catch(() => null);
+    const keyOut = usage?.key && usage.key.remaining === 0;
+    if (usage && (usage.remaining === 0 || keyOut)) {
+      return { status: 429, body: { code: "monthly_cap", error: "This month's free runs are used up.", resets_at: usage.resets_at ?? null } };
+    }
+    return { status: 503, body: { code: "busy", error: "The run queue is busy." } };
+  }
+  if (status === 403 || status === 404) {
+    return { status: 500, body: { code: "misconfigured", error: `The run server's API key was refused${message ? `: ${message}` : "."}` } };
+  }
+  if (status === 503 || status >= 500) return { status: 502, body: { code: "upstream_down", error: "The code runner is having problems." } };
+  return null; // 400s etc. are the user's to read, relayed as they are
+};
+
+const fetchUsage = async () => {
+  const res = await fetch(usageUrl, { headers: { Authorization: API_KEY }, signal: AbortSignal.timeout(5_000) });
+  if (!res.ok) throw new Error(`usage ${res.status}`);
+  return res.json();
+};
+
 const postUpstream = async (path, payload, timeoutMs) => {
   const upstream = await fetch(`https://api.onlinecompiler.io${path}`, {
     method: "POST",
@@ -121,27 +209,41 @@ const postUpstream = async (path, payload, timeoutMs) => {
   return { status: upstream.status, contentType: upstream.headers.get("content-type") ?? "application/json", text: await upstream.text() };
 };
 
-// Relays the API's answer unchanged; a timeout or network failure becomes a 504 or 502.
-const relayUpstream = async (res, call) => {
+// Runs one upstream call inside the room lock and the slot cap, then relays the answer: successes and the
+// user's own 400s unchanged, everything else as { code, error } (see classifyUpstreamFailure).
+const runUpstream = async (res, { room, runId, slots, keepLock }, call) => {
+  if (!lockRoom(room, runId)) {
+    return json(res, 409, { code: "room_busy", error: "Someone in this room is already running code." });
+  }
+  let gotSlots = 0, keepForMs = 0;
   try {
-    const { status, contentType, text } = await call();
-    res.writeHead(status, { "Content-Type": contentType });
-    res.end(text);
+    gotSlots = await acquireSlots(slots);
+    const result = await call();
+    const failure = result.status >= 400 ? await classifyUpstreamFailure(result, fetchUsage) : null;
+    if (failure) return json(res, failure.status, failure.body);
+    if (keepLock && nextBatchWillCome(result)) keepForMs = BATCH_GAP_MS;
+    res.writeHead(result.status, { "Content-Type": result.contentType });
+    res.end(result.text);
   } catch (err) {
-    if (err.name === "TimeoutError") json(res, 504, { error: "Compilation timed out" });
-    else json(res, 502, { error: "Execution service unreachable" });
+    if (err instanceof BusyError) {
+      keepForMs = RETRY_GAP_MS;
+      json(res, 503, { code: "busy", error: "The run queue is busy." });
+    }
+    else if (err.name === "TimeoutError") json(res, 504, { code: "upstream_timeout", error: "The code runner took too long to answer." });
+    else json(res, 502, { code: "upstream_down", error: "The code runner can't be reached." });
+  } finally {
+    if (gotSlots) releaseSlots(gotSlots);
+    unlockRoom(room, keepForMs);
   }
 };
 
-// Shared by /run and /run-tests: key present, rate limit, JSON body, known compiler, text-only code.
+const ROOM_RE = /^[^\x00-\x1F\x7F]{1,128}$/; // any room the page can open (it takes the URL segment as is)
+const RUN_ID_RE = /^[A-Za-z0-9-]{1,64}$/;  // crypto.randomUUID() from the browser
+
+// Shared by /run and /run-tests: key present, JSON body, room and run ids, known compiler, text-only code.
 const readRunRequest = async (req, res, maxBytes) => {
   if (!API_KEY || API_KEY === "PASTE_YOUR_KEY_HERE") {
-    json(res, 500, { error: "Set ONLINECOMPILER_API_KEY in backend/.env" });
-    return null;
-  }
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
-  if (!checkRateLimit(ip)) {
-    json(res, 429, { error: "Rate limit exceeded. Try again later." });
+    json(res, 500, { code: "misconfigured", error: "Set ONLINECOMPILER_API_KEY in backend/.env" });
     return null;
   }
   let body;
@@ -152,8 +254,10 @@ const readRunRequest = async (req, res, maxBytes) => {
     else json(res, 400, { error: "Invalid JSON" });
     return null;
   }
-  const { compiler, code } = body ?? {};
+  const { compiler, code, room, run_id } = body ?? {};
   const fail = (error) => (json(res, 400, { error }), null);
+  if (typeof room !== "string" || !ROOM_RE.test(room)) return fail("Missing or invalid room");
+  if (typeof run_id !== "string" || !RUN_ID_RE.test(run_id)) return fail("Missing or invalid run_id");
   if (!COMPILERS.has(compiler)) return fail("Unknown compiler");
   if (typeof code !== "string" || !code.trim()) return fail("Code is required");
   if (code.length > 100_000) return fail("Code exceeds 100KB");
@@ -169,8 +273,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/run") {
     const body = await readRunRequest(req, res, 250_000);
     if (!body) return;
-    const { compiler, code, input } = body;
-    return relayUpstream(res, () => postUpstream("/api/run-code-sync/", { compiler, code, input: sanitize(input) }, 30_000));
+    const { compiler, code, input, room, run_id } = body;
+    // 40 s: a run may take the full 30 s (docs/limits) plus compile and network, so 30 s cut off the API's own
+    // "time limit" answer (exit 124) before it arrived.
+    return runUpstream(res, { room, runId: run_id, slots: 1, keepLock: false },
+      () => postUpstream("/api/run-code-sync/", { compiler, code, input: sanitize(input) }, 40_000));
   }
 
   // How many tests the client should send per /run-tests batch so each gets the full time limit.
@@ -184,7 +291,7 @@ const server = http.createServer(async (req, res) => {
     // Field limits are in characters; 32 tests × 2 fields × 10,000 chars of 3-byte UTF-8, plus code, fits in 4 MB.
     const body = await readRunRequest(req, res, 4_000_000);
     if (!body) return;
-    const { compiler, code, tests } = body;
+    const { compiler, code, tests, room, run_id, final } = body;
     if (!Array.isArray(tests) || tests.length < 1) return json(res, 400, { error: "Add at least one test" });
     if (tests.length > MAX_TESTS) return json(res, 400, { error: `At most ${MAX_TESTS} tests per run` });
     if (!tests.every(t => typeof t?.input === "string" && typeof t?.expected_output === "string"
@@ -199,14 +306,20 @@ const server = http.createServer(async (req, res) => {
       checker: "trim",      // trailing whitespace per line + trailing blank lines, like the old normalize()
       scoring: "percent",   // percent also turns off stop_on_failure, so every test gets a verdict
     };
+    // The API runs up to 4 of a request's tests at once, so a batch asks for that many of the account's slots.
     // 70 s: the API gives one request 60 s (docs/run-tests). A refusal comes back at once, so a retry adds little.
-    return relayUpstream(res, () => runTestsWithRetry(payload, p => postUpstream("/api/run-tests/", p, 70_000)));
+    return runUpstream(res, { room, runId: run_id, slots: Math.min(tests.length, MAX_SLOTS), keepLock: final === false },
+      () => runTestsWithRetry(payload, p => postUpstream("/api/run-tests/", p, 70_000)));
   }
 
   json(res, 404, { error: "Not found" });
 });
 
-module.exports = { testTimeLimit, maxBatchSize, suggestedTimeLimit, runTestsWithRetry, sanitize };
+module.exports = {
+  testTimeLimit, maxBatchSize, suggestedTimeLimit, runTestsWithRetry, sanitize,
+  acquireSlots, releaseSlots, BusyError, lockRoom, unlockRoom, sweepRoomLocks, roomLocks, classifyUpstreamFailure,
+  nextBatchWillCome, ROOM_RE,
+};
 if (require.main !== module) return; // imported by the tests: don't start the server
 
 server.listen(PORT, () => {
