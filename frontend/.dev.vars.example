@@ -1,0 +1,5 @@
+# Local Worker secrets: copy to .dev.vars (gitignored). Production: `npx wrangler secret put <NAME> --env production`.
+# onlinecompiler.io API key (https://api.onlinecompiler.io → API Keys → REST API).
+ONLINECOMPILER_API_KEY=your-key
+# Cloudflare's Turnstile test secret that always passes. Leave empty to skip the check locally.
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
