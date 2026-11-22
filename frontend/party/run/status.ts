@@ -24,19 +24,23 @@ export const summarizeStatus = (usage: Usage | null, health: { status?: string }
 };
 
 // Serves the last value while it is fresh; concurrent callers share one load; a failed load isn't kept.
-// The clock is passed in by the tests.
+// One clock for both reading and stamping (the tests pass a fake one).
 export class TtlCache<T> {
   private at = 0;
   private value: T | null = null;
   private pending: Promise<T> | null = null;
 
-  constructor(private readonly ttlMs: number, private readonly load: () => Promise<T>) {}
+  constructor(
+    private readonly ttlMs: number,
+    private readonly load: () => Promise<T>,
+    private readonly now: () => number = Date.now,
+  ) {}
 
-  get(now = Date.now()): Promise<T> {
-    if (this.value !== null && now - this.at < this.ttlMs) return Promise.resolve(this.value);
+  get(): Promise<T> {
+    if (this.value !== null && this.now() - this.at < this.ttlMs) return Promise.resolve(this.value);
     if (!this.pending) {
       this.pending = this.load().then(
-        value => { this.value = value; this.at = Date.now(); this.pending = null; return value; },
+        value => { this.value = value; this.at = this.now(); this.pending = null; return value; },
         err => { this.pending = null; throw err; },
       );
     }

@@ -1,7 +1,9 @@
 import { YServer } from "y-partyserver";
 import { routePartykitRequest } from "partyserver";
+import type { Env } from "./env";
+import { limiterFor } from "./limiter";
 
-type Env = { Main: DurableObjectNamespace<FluxRoom> };
+export { Limiter } from "./limiter";
 
 export class FluxRoom extends YServer<Env> {
   static callbackOptions = {
@@ -26,8 +28,12 @@ export class FluxRoom extends YServer<Env> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (request.method === "GET" && new URL(request.url).pathname === "/status") {
+      return Response.json(await limiterFor(env).status());
+    }
+    // routePartykitRequest exposes every Durable Object binding it is given as /parties/<name>/...; only rooms are public.
     return (
-      (await routePartykitRequest(request, env)) ||
+      (await routePartykitRequest(request, { Main: env.Main } as Env)) ||
       new Response("Not Found", { status: 404 })
     );
   }

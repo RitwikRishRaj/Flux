@@ -88,50 +88,81 @@ describe("limits", () => {
 describe("slots", () => {
   test("a full cap queues, and a freed slot lets the next request in", async () => {
     const pool = new SlotPool(4, 200);
-    assert.strictEqual(await pool.acquire(4), 4);
+    const all = await pool.acquire(4);
+    assert.strictEqual(all.slots, 4);
     let got: number | null = null;
-    const waiter = pool.acquire(1).then(n => { got = n; });
+    const waiter = pool.acquire(1).then(l => { got = l.slots; return l; });
     await new Promise(r => setTimeout(r, 50));
     assert.strictEqual(got, null, "waits while every slot is taken");
-    pool.release(4);
-    await waiter;
+    pool.release(all.id);
+    const lease = await waiter;
     assert.strictEqual(got, 1, "starts once a slot frees up");
-    pool.release(1);
+    pool.release(lease.id);
     assert.strictEqual(pool.freeSlots, 4);
   });
 
   test("waiting longer than the queue time rejects as busy", async () => {
     const pool = new SlotPool(4, 200);
-    await pool.acquire(4);
+    const all = await pool.acquire(4);
     const t0 = Date.now();
     await assert.rejects(pool.acquire(1), BusyError);
     assert.ok(Date.now() - t0 >= 180, "waited for the queue time first");
-    pool.release(4);
-    assert.strictEqual(await pool.acquire(4), 4, "every slot is free again afterwards");
+    pool.release(all.id);
+    assert.strictEqual((await pool.acquire(4)).slots, 4, "every slot is free again afterwards");
   });
 
   test("a batch takes what is free, so nothing waits behind it while a slot is free", async () => {
     const pool = new SlotPool(4, 200);
-    assert.strictEqual(await pool.acquire(1), 1);  // a long /run in another room
-    assert.strictEqual(await pool.acquire(4), 3, "the batch starts at once with the 3 free slots");
+    const run = await pool.acquire(1);              // a long run in another room
+    const batch = await pool.acquire(4);
+    assert.strictEqual(batch.slots, 3, "the batch starts at once with the 3 free slots");
     let got: number | null = null;
-    const run = pool.acquire(1).then(n => { got = n; });
+    const next = pool.acquire(1).then(l => { got = l.slots; return l; });
     await new Promise(r => setTimeout(r, 50));
-    assert.strictEqual(got, null, "now everything is taken, so the next /run waits");
-    pool.release(1);
-    await run;
+    assert.strictEqual(got, null, "now everything is taken, so the next run waits");
+    pool.release(run.id);
+    const nextLease = await next;
     assert.strictEqual(got, 1, "and gets the freed slot");
-    pool.release(1); pool.release(3);
+    pool.release(nextLease.id); pool.release(batch.id);
     assert.strictEqual(pool.freeSlots, 4, "all slots accounted for");
   });
 
   test("a full queue refuses at once", async () => {
     const pool = new SlotPool(1, 1000, 2);
-    await pool.acquire(1);
+    const first = await pool.acquire(1);
     const a = pool.acquire(1), b = pool.acquire(1);
     await assert.rejects(pool.acquire(1), BusyError);
-    pool.release(1); await a; pool.release(1); await b; pool.release(1);
+    pool.release(first.id); pool.release((await a).id); pool.release((await b).id);
     assert.strictEqual(pool.freeSlots, 1);
+  });
+
+  test("a lease that is never released (crashed room) ends on its own", async () => {
+    let clock = 1_000_000;
+    const pool = new SlotPool(4, 200, 16, 90_000, () => clock);
+    const lost = await pool.acquire(4);
+    clock += 89_000;
+    assert.strictEqual(pool.freeSlots, 0, "still held inside 90 s");
+    clock += 2_000;
+    assert.strictEqual(pool.freeSlots, 4, "freed after 90 s");
+    pool.release(lost.id);
+    assert.strictEqual(pool.freeSlots, 4, "a late release of the expired lease frees nothing twice");
+  });
+
+  test("a waiter gets a slot whose lease ran out while it waited", async () => {
+    let clock = 1_000_000;
+    const pool = new SlotPool(1, 200, 16, 90_000, () => clock);
+    await pool.acquire(1);                         // never released
+    const waiter = pool.acquire(1);
+    clock += 91_000;                               // the lease runs out during the wait
+    const lease = await waiter;                    // checked once more at the queue deadline instead of "busy"
+    assert.strictEqual(lease.slots, 1);
+  });
+
+  test("releasing twice, or an unknown id, changes nothing", async () => {
+    const pool = new SlotPool(2, 200);
+    const lease = await pool.acquire(1);
+    pool.release(lease.id); pool.release(lease.id); pool.release("nope");
+    assert.strictEqual(pool.freeSlots, 2);
   });
 });
 
@@ -215,15 +246,17 @@ describe("status", () => {
   });
 
   test("cached for 60 s, and concurrent requests share one load", async () => {
-    let loads = 0;
+    let loads = 0, clock = 1_000_000;
     const load = async () => { loads++; await new Promise(r => setTimeout(r, 20)); return { service: "ok", n: loads }; };
-    const cache = new TtlCache(STATUS_TTL_MS, load);
+    const cache = new TtlCache(STATUS_TTL_MS, load, () => clock);
     const [a, b] = await Promise.all([cache.get(), cache.get()]);
     assert.strictEqual(loads, 1, "two requests at once, one load");
     assert.strictEqual(a, b);
-    await cache.get(Date.now() + STATUS_TTL_MS - 1000);
+    clock += STATUS_TTL_MS - 1000;
+    await cache.get();
     assert.strictEqual(loads, 1, "still fresh inside 60 s");
-    const later = await cache.get(Date.now() + STATUS_TTL_MS + 1000);
+    clock += 2000;
+    const later = await cache.get();
     assert.strictEqual(loads, 2, "reloaded after 60 s");
     assert.strictEqual(later.n, 2);
 

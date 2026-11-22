@@ -4,7 +4,15 @@
   "compatibility_date": "2026-10-17",
   "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
-    "bindings": [{ "name": "Main", "class_name": "FluxRoom" }]
+    "bindings": [
+      { "name": "Main", "class_name": "FluxRoom" },
+      { "name": "LIMITER", "class_name": "Limiter" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FluxRoom"] }]
+  // Legacy migration syntax for now; step 4b moves to "exports" before the first deploy.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["FluxRoom"] },
+    { "tag": "v2", "new_sqlite_classes": ["Limiter"] }
+  ],
+  "vars": { "DAILY_RUN_BUDGET": "3000" }
 }
