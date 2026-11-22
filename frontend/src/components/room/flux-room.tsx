@@ -226,45 +226,46 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
 
   return (
     <main className="flex h-[100dvh] flex-col gap-2 bg-ground p-2 text-primary md:p-3">
-      <header className="flex h-14 shrink-0 items-center gap-2 rounded-full bg-white/[0.03] px-3 ring-1 ring-inset ring-white/[0.08] md:px-4">
-        <a href="/" aria-label="Back" className="flex h-9 w-9 items-center justify-center rounded-full text-primary/60 transition-colors duration-300 hover:bg-white/[0.06] hover:text-primary active:scale-95">
+      <header className="flex h-14 shrink-0 items-center gap-1.5 rounded-full bg-white/[0.03] px-2 ring-1 ring-inset ring-white/[0.08] sm:gap-2 sm:px-3 md:px-4">
+        <a href="/" aria-label="Back" className="hidden h-9 w-9 shrink-0 items-center sm:flex justify-center rounded-full text-primary/60 transition-colors duration-300 hover:bg-white/[0.06] hover:text-primary active:scale-95">
           <ArrowLeft className="h-[18px] w-[18px]" strokeWidth={1.5} />
         </a>
         <span className="hidden font-mono text-[13px] text-primary/50 sm:block">/{id}</span>
 
-        <div role="tablist" aria-label="Mode" className="relative z-0 ml-1 flex h-9 items-center rounded-full bg-white/[0.04] p-0.5">
+        <div role="tablist" aria-label="Mode" className="relative z-0 flex shrink-0 sm:ml-1 h-9 items-center rounded-full bg-white/[0.04] p-0.5">
           {(["code", "web"] as const).map(m => (
-            <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => switchMode(m)} className={`relative h-8 rounded-full px-3.5 text-sm font-medium transition-colors duration-300 ${mode === m ? "text-black" : "text-primary/60 hover:text-primary"}`}>
+            <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => switchMode(m)} className={`relative h-8 rounded-full px-2.5 text-sm sm:px-3.5 font-medium transition-colors duration-300 ${mode === m ? "text-black" : "text-primary/60 hover:text-primary"}`}>
               {mode === m && <motion.span layoutId="mode-pill" className="absolute inset-0 -z-10 rounded-full bg-primary" transition={{ type: "spring", stiffness: 380, damping: 32 }} />}
               {m === "code" ? "Code" : "Web"}
             </button>
           ))}
         </div>
 
-        <div className={`ml-1 ${mode === "web" ? "hidden" : ""}`}>
+        <div className={`shrink-0 sm:ml-1 ${mode === "web" ? "hidden" : ""}`}>
           <LanguagePicker value={compilerId} onChange={switchLanguage} />
         </div>
 
         <div className="flex-1" />
 
-        {/* Remote users */}
-        {remoteUsers.map(u => (
-          <div key={u.id} title={u.name} className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-black" style={{ backgroundColor: u.color }}>
-            <span className="max-w-24 truncate">{u.name}</span>
-          </div>
-        ))}
-
-        <div title={`${user.name} (you)`} className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-black" style={{ backgroundColor: user.color }}>
-          <span className="max-w-24 truncate">{user.name || "You"}</span>
+        {/* People. Phones get one bubble (your initial, or how many are here); wider screens clip extra names rather than widen the page. */}
+        <div title={[`${user.name || "You"} (you)`, ...remoteUsers.map(u => u.name)].join(", ")} className={`flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full px-2 text-[13px] font-semibold text-black sm:hidden ${remoteUsers.length ? "bg-primary" : ""}`} style={remoteUsers.length ? undefined : { backgroundColor: user.color }}>
+          {remoteUsers.length ? remoteUsers.length + 1 : (user.name.slice(0, 1).toUpperCase() || "Y")}
+        </div>
+        <div className="hidden min-w-0 items-center gap-2 overflow-hidden sm:flex">
+          {[...remoteUsers.map(u => ({ ...u, title: u.name })), { ...user, name: user.name || "You", title: `${user.name} (you)` }].map(u => (
+            <div key={u.id} title={u.title} className="flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] font-semibold text-black" style={{ backgroundColor: u.color }}>
+              <span className="max-w-24 truncate">{u.name}</span>
+            </div>
+          ))}
         </div>
 
-        <button type="button" onClick={copyLink} className="inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium text-primary/70 transition-all duration-300 hover:bg-white/[0.06] hover:text-primary active:scale-[0.97]">
+        <button type="button" onClick={copyLink} aria-label={copied ? "Copied" : "Share"} className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full px-2.5 text-sm sm:px-4 font-medium text-primary/70 transition-all duration-300 hover:bg-white/[0.06] hover:text-primary active:scale-[0.97]">
           {copied ? <Check className="h-4 w-4 text-[#5FD0A8]" strokeWidth={1.5} /> : <Link2 className="h-4 w-4" strokeWidth={1.5} />}
           <span className="hidden sm:inline">{copied ? "Copied" : "Share"}</span>
         </button>
 
-        <button type="button" onClick={run} disabled={running || !!runningBy} className={`group ${mode === "web" ? "hidden" : "inline-flex"} h-10 items-center gap-3 rounded-full bg-primary pl-5 pr-1.5 text-sm font-semibold text-black transition-all duration-300 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed`}>
-          {running ? "Running" : "Run"}
+        <button type="button" onClick={run} disabled={running || !!runningBy} aria-label={running ? "Running" : "Run"} className={`group ${mode === "web" ? "hidden" : "inline-flex"} h-10 shrink-0 items-center gap-3 rounded-full bg-primary pl-1.5 pr-1.5 sm:pl-5 text-sm font-semibold text-black transition-all duration-300 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed`}>
+          <span className="hidden sm:inline">{running ? "Running" : "Run"}</span>
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black transition-transform duration-500 group-hover:scale-105">
             {running ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" strokeWidth={1.5} /> : <Play className="h-3.5 w-3.5 fill-primary text-primary" strokeWidth={1.5} />}
           </span>

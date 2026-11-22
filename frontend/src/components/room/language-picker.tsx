@@ -55,7 +55,7 @@ export function LanguagePicker({ value, onChange }: { value: CompilerId; onChang
         aria-label={`Language: ${current.label}`}
         onClick={() => (open ? close() : show())}
         onKeyDown={e => { if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); show(); } }}
-        className="flex h-9 items-center gap-1.5 rounded-full pl-4 pr-2.5 text-sm font-medium text-primary outline-none transition-colors hover:bg-white/[0.06] focus-visible:bg-white/[0.06]"
+        className="flex h-9 items-center gap-1.5 rounded-full pl-3 pr-2 sm:pl-4 sm:pr-2.5 text-sm font-medium text-primary outline-none transition-colors hover:bg-white/[0.06] focus-visible:bg-white/[0.06]"
       >
         {current.label}
         <ChevronDown className={`h-4 w-4 text-primary/50 transition-transform duration-300 ${open ? "rotate-180" : ""}`} strokeWidth={1.5} />
