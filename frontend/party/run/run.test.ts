@@ -8,6 +8,7 @@ import { classifyUpstreamFailure, failureFromError, type Usage } from "./upstrea
 import { checkCode, checkTests, ROOM_RE } from "./validate";
 import { STATUS_TTL_MS, summarizeStatus, TtlCache } from "./status";
 import { BusyError, SlotPool } from "./slots";
+import { isAllowedOrigin } from "./origin";
 
 const result = (status: number, body: unknown): UpstreamResult =>
   ({ status, contentType: "application/json", text: typeof body === "string" ? body : JSON.stringify(body) });
@@ -186,6 +187,18 @@ describe("validate", () => {
     assert.strictEqual(checkTests([{ stdin: "", expectedOutput: "" }]).ok, false);
     assert.strictEqual(checkTests([{ input: "x".repeat(10_001), expected_output: "" }]).ok, false);
     assert.strictEqual(checkTests([{ input: "1", expected_output: "2" }]).ok, true);
+  });
+});
+
+describe("origin", () => {
+  test("only exact listed origins pass; missing or unset means no", () => {
+    const allowed = "http://localhost:3000, https://flux.example.com";
+    assert.ok(isAllowedOrigin("http://localhost:3000", allowed));
+    assert.ok(isAllowedOrigin("https://flux.example.com", allowed), "spaces around commas are fine");
+    assert.ok(!isAllowedOrigin("https://flux.example.com.evil.io", allowed), "no prefix matching");
+    assert.ok(!isAllowedOrigin("http://localhost:3001", allowed), "port matters");
+    assert.ok(!isAllowedOrigin(null, allowed), "no Origin header");
+    assert.ok(!isAllowedOrigin("http://localhost:3000", undefined), "unset list allows nothing");
   });
 });
 

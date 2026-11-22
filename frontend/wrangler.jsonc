@@ -14,5 +14,9 @@
     { "tag": "v1", "new_sqlite_classes": ["FluxRoom"] },
     { "tag": "v2", "new_sqlite_classes": ["Limiter"] }
   ],
-  "vars": { "DAILY_RUN_BUDGET": "3000" }
+  // Local dev values; production gets its own in step 4b.
+  "vars": {
+    "DAILY_RUN_BUDGET": "3000",
+    "ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000"
+  }
 }

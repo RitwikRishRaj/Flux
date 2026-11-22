@@ -8,6 +8,7 @@ import { checkCode, checkTests } from "./run/validate";
 import { MAX_TESTS } from "./run/limits";
 import { fetchUsage, postUpstream } from "./run/upstream";
 import type { CompilerList } from "./run/compilers";
+import { isAllowedOrigin } from "./run/origin";
 
 export { Limiter } from "./limiter";
 
@@ -174,13 +175,17 @@ export class FluxRoom extends YServer<Env> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const origin = request.headers.get("Origin");
+    const allowed = isAllowedOrigin(origin, env.ALLOWED_ORIGINS);
     if (request.method === "GET" && new URL(request.url).pathname === "/status") {
-      // shortcut: any origin may read /status (runs left, service health; nothing private), until step 2's ALLOWED_ORIGINS.
-      return Response.json(await limiterFor(env).status(), { headers: { "Access-Control-Allow-Origin": "*" } });
+      // Public figures (runs left, service health), but only listed pages may read them cross-origin.
+      return Response.json(await limiterFor(env).status(), { headers: allowed ? { "Access-Control-Allow-Origin": origin!, Vary: "Origin" } : {} });
     }
+    // Rooms (websocket and plain requests) only for pages on ALLOWED_ORIGINS, refused before the room is created.
+    const refuse = async () => (allowed ? undefined : new Response("Origin not allowed", { status: 403 }));
     // routePartykitRequest exposes every Durable Object binding it is given as /parties/<name>/...; only rooms are public.
     return (
-      (await routePartykitRequest(request, { Main: env.Main } as Env)) ||
+      (await routePartykitRequest(request, { Main: env.Main } as Env, { onBeforeConnect: refuse, onBeforeRequest: refuse })) ||
       new Response("Not Found", { status: 404 })
     );
   }

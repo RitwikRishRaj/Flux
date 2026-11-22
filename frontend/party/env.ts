@@ -7,4 +7,5 @@ export type Env = {
   LIMITER: DurableObjectNamespace<Limiter>;   // one for the whole app (idFromName("global"))
   ONLINECOMPILER_API_KEY?: string;            // secret
   DAILY_RUN_BUDGET?: string;                  // var; runs per UTC day, default 3000
+  ALLOWED_ORIGINS?: string;                   // var; comma-separated page origins allowed to open rooms
 };
