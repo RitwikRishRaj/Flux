@@ -3,6 +3,7 @@ import type { FluxRoom } from "./server";
 import type { Limiter } from "./limiter";
 
 export type Env = {
+  ASSETS: Fetcher;                            // the static site (out/), from wrangler.jsonc "assets"
   Main: DurableObjectNamespace<FluxRoom>;     // one Durable Object per room
   LIMITER: DurableObjectNamespace<Limiter>;   // one for the whole app (idFromName("global"))
   ONLINECOMPILER_API_KEY?: string;            // secret

@@ -223,6 +223,10 @@ export class FluxRoom extends YServer<Env> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // Every room is the one static /room page; the page reads the id from the URL.
+    if (new URL(request.url).pathname.startsWith("/room/")) {
+      return env.ASSETS.fetch(new Request(new URL("/room", request.url), request));
+    }
     const origin = request.headers.get("Origin");
     const allowed = isAllowedOrigin(origin, env.ALLOWED_ORIGINS);
     if (request.method === "GET" && new URL(request.url).pathname === "/status") {
@@ -246,7 +250,7 @@ export default {
     // routePartykitRequest exposes every Durable Object binding it is given as /parties/<name>/...; only rooms are public.
     return (
       (await routePartykitRequest(request, { Main: env.Main } as Env, { onBeforeConnect: beforeConnect, onBeforeRequest: refuse })) ||
-      new Response("Not Found", { status: 404 })
+      env.ASSETS.fetch(request)
     );
   }
 } satisfies ExportedHandler<Env>;

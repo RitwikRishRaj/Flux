@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Check, ChevronDown, Link2, Loader2, Play, SquareTerminal, FlaskConical, Terminal } from "lucide-react";
 import { COMPILERS, RETIRED, byId, isEmptyOrStarter, describeExit, formatSeconds, formatMemory, type CompilerId } from "@/lib/compilers";
 import { FLUX_THEME } from "@/lib/flux-monaco";
-import { connect } from "@/lib/party";
+import { connect, partyOrigin } from "@/lib/party";
 import { bannerFor, messageFor, type RunStatus } from "@/lib/run-api";
 import { TestsTab } from "@/components/tests-tab";
 import type { TestCase, TestResult, TestRunState } from "@/components/tests-tab";
@@ -148,7 +148,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
     let active = true;
     const load = () => {
       if (document.hidden) return;
-      fetch(`${process.env.NEXT_PUBLIC_PARTYKIT_URL ?? ""}/status`)
+      fetch(`${partyOrigin()}/status`)
         .then(r => (r.ok ? (r.json() as Promise<Record<string, unknown>>) : null))
         .then(d => { if (active && d && typeof d.service === "string") setRunStatus(d as unknown as RunStatus); })
         .catch(() => { /* no banner rather than a wrong one */ });

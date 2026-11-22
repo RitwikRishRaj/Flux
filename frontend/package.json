@@ -10,6 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "wrangler": "wrangler dev",
+    "preview": "next build && wrangler dev",
+    "deploy": "next build && wrangler deploy --env production",
     "postinstall": "bash scripts/patch-y-monaco.sh"
   },
   "dependencies": {

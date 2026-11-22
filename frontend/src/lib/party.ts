@@ -6,6 +6,11 @@ import { getTurnstileToken } from "./turnstile";
 
 let PARTY_URL: string | undefined;
 
+// Where the Worker is. In production it serves the site too, so it is the page's own origin (""). Only `next dev` runs
+// the Worker separately (NEXT_PUBLIC_PARTYKIT_URL); a production build ignores that variable even if .env.local has it.
+export const partyOrigin = () =>
+  process.env.NODE_ENV === "development" ? process.env.NEXT_PUBLIC_PARTYKIT_URL ?? "" : "";
+
 export function connect(
   roomId: string,
   editor: monacoNS.editor.IStandaloneCodeEditor,
@@ -14,8 +19,7 @@ export function connect(
   monaco: typeof monacoNS,
   editorId: string = "main"
 ) {
-  PARTY_URL ??= process.env.NEXT_PUBLIC_PARTYKIT_URL;
-  if (!PARTY_URL) throw new Error("Set NEXT_PUBLIC_PARTYKIT_URL");
+  PARTY_URL ??= partyOrigin() || window.location.origin;
 
   const doc = new Y.Doc();
   const ytext = doc.getText("monaco");
