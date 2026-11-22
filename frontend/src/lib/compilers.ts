@@ -24,20 +24,6 @@ export const byId = (id: CompilerId): Compiler =>
 // Safe to replace with another starter: nothing typed, or only an untouched starter snippet.
 export const isEmptyOrStarter = (code: string) => !code.trim() || COMPILERS.some((c) => c.hello === code);
 
-export interface RunResult {
-  output: string;
-  error: string;
-  status: string;
-  exit_code: number;
-  signal: number | null;
-  truncated: boolean;   // stdout or stderr went over 64 KB and was cut
-  time: string;         // seconds, as text
-  total: string;
-  memory: string;       // KB, as text; includes the language runtime
-  time_limit: number;   // seconds
-  memory_limit: number; // MB
-}
-
 // What an exit code means, from the docs' exit-code table (onlinecompiler.io/docs/run-code). null for a clean exit.
 export const describeExit = (exitCode: number, signal: number | null, timeLimit?: number | null, memoryLimit?: number | null): string | null => {
   switch (exitCode) {

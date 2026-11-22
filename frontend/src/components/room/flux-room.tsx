@@ -6,10 +6,10 @@ import type * as monacoNS from "monaco-editor";
 import * as Y from "yjs";
 import { motion } from "framer-motion";
 import { ArrowLeft, Check, ChevronDown, Link2, Loader2, Play, SquareTerminal, FlaskConical, Terminal } from "lucide-react";
-import { COMPILERS, RETIRED, byId, isEmptyOrStarter, describeExit, formatSeconds, formatMemory, type CompilerId, type RunResult } from "@/lib/compilers";
+import { COMPILERS, RETIRED, byId, isEmptyOrStarter, describeExit, formatSeconds, formatMemory, type CompilerId } from "@/lib/compilers";
 import { FLUX_THEME } from "@/lib/flux-monaco";
 import { connect } from "@/lib/party";
-import { bannerFor, callRunApi, type RunStatus } from "@/lib/run-api";
+import { bannerFor, messageFor, type RunStatus } from "@/lib/run-api";
 import { TestsTab } from "@/components/tests-tab";
 import type { TestCase, TestResult, TestRunState } from "@/components/tests-tab";
 import { WebStudio } from "@/components/room/web-studio";
@@ -27,11 +27,7 @@ export interface RoomUser { id: string; name: string; color: string }
 export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser; initialMode: "code" | "web" }) {
   const [compilerId, setCompilerId] = useState<CompilerId>("python-3.14");
   const compiler = byId(compilerId);
-  const [code, setCode] = useState(""); // Empty: template seeded by Yjs after first sync
-  const [stdin, setStdin] = useState("");
   const [tab, setTab] = useState<Tab>("output");
-  const [running, setRunning] = useState(false);
-  const [netErr, setNetErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [remoteUsers, setRemoteUsers] = useState<Array<{ id: string; name: string; color: string }>>([]); // GROUP by user.id, SHOW most recently updated per user; on pagehide, setLocalState(null) to remove ghost
   const [tabPresence, setTabPresence] = useState<Map<Tab, Array<{ id: string; name: string; color: string }>>>(new Map());
@@ -40,9 +36,16 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
   const [lastRun, setLastRun] = useState<{
     stdout: string; stderr: string; status: string; runBy: string; runById: string; finishedAt: number;
     exitCode: number | null; signal: number | null; time: string; memory: string; truncated: boolean; timeLimit: number | null; memoryLimit: number | null;
+    errorCode: string | null; error: string; resetsAt: string | null; // a run the room couldn't do (busy, budget, ...)
   } | null>(null);
   const [testRun, setTestRun] = useState<TestRunState | null>(null);
-  const [runningBy, setRunningBy] = useState<string | null>(null);
+  // The room's run in progress (code or tests), from the shared doc: the room runs it, so it ends even if its starter leaves.
+  const [runState, setRunState] = useState<{ active: "run" | "tests" | null; by: string; note: string | null }>({ active: null, by: "", note: null });
+  const runningBy = runState.active ? runState.by || "Someone" : null;
+  const running = runState.active === "run";
+  const sendRef = useRef<((message: object) => boolean) | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null); // a request that couldn't be sent (not connected)
+  const netErr = sendError ?? (lastRun?.errorCode ? messageFor(lastRun.errorCode, { error: lastRun.error, resets_at: lastRun.resetsAt }, 0) : null);
   const [mode, setMode] = useState(initialMode);
   const [conn, setConn] = useState<{ doc: Y.Doc; awareness: any; whenSynced: (cb: () => void) => () => void } | null>(null);
   const [offerStarter, setOfferStarter] = useState<CompilerId | null>(null);
@@ -72,7 +75,6 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
        window.addEventListener("keydown", onKey);
     
     const onPageHide = () => {
-      awarenessRef.current?.setLocalStateField("running", null);
       awarenessRef.current?.setLocalStateField("activeTab", null);
     };
     window.addEventListener("pagehide", onPageHide);
@@ -90,59 +92,21 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
     };
   }, [id]);
 
-  const run = async () => {
-    if (mode === "web" || running || runningBy) return;
-    setRunning(true);
-    setNetErr(null);
+  // The room reads the code, input and language from the shared doc and runs it; results come back the same way.
+  const ask = (message: object) => setSendError(sendRef.current?.(message) ? null : messageFor("offline", {}, 0));
+  const run = () => {
+    if (mode === "web" || runningBy) return;
     setTab("output");
-    
-    // Set awareness: running state
-    const runId = crypto.randomUUID();
-    awarenessRef.current?.setLocalStateField("running", { runId, user: { name: user.name, id: user.id } });
-    
-    try {
-      const currentStdin = stdinRef.current?.toString().slice(0, 20000) || "";
-      // room + run_id: the server runs one program per room at a time.
-      const call = await callRunApi("/run", {
-        compiler: compilerId, code: editorRef.current?.getValue() ?? code, input: currentStdin, room: id, run_id: runId,
-      }, { onRetry: () => setNetErr("The run queue is busy, retrying…") });
-
-      if (!call.ok) {
-        setNetErr(call.message);
-      } else {
-        setNetErr(null); // clears a "retrying…" note
-        const data = call.data as RunResult;
-        // Write to shared Y.Map, with what the status line needs (fields per docs/run-code)
-        if (lastRunRef.current) {
-          lastRunRef.current.doc!.transact(() => {
-            lastRunRef.current!.set("stdout", (data.output || "").slice(0, 50000));
-            lastRunRef.current!.set("stderr", (data.error || "").slice(0, 50000));
-            lastRunRef.current!.set("status", data.exit_code === 0 ? "ok" : "error");
-            lastRunRef.current!.set("runBy", user.name.replace(/["\\<>\n]/g, "").slice(0, 24));
-            lastRunRef.current!.set("runById", user.id);
-            lastRunRef.current!.set("finishedAt", Date.now());
-            lastRunRef.current!.set("exitCode", typeof data.exit_code === "number" ? data.exit_code : null);
-            lastRunRef.current!.set("signal", typeof data.signal === "number" ? data.signal : null);
-            lastRunRef.current!.set("time", typeof data.time === "string" ? data.time.slice(0, 20) : "");
-            lastRunRef.current!.set("memory", typeof data.memory === "string" ? data.memory.slice(0, 20) : "");
-            lastRunRef.current!.set("truncated", data.truncated === true);
-            lastRunRef.current!.set("timeLimit", typeof data.time_limit === "number" ? data.time_limit : null);
-            lastRunRef.current!.set("memoryLimit", typeof data.memory_limit === "number" ? data.memory_limit : null);
-          });
-        }
-      }
-    } finally {
-      setRunning(false);
-      awarenessRef.current?.setLocalStateField("running", null);
-    }
+    ask({ type: "run", by: user.name });
   };
+  const runAllTests = () => ask({ type: "runTests", by: user.name });
   const runRef = useRef(run);
   runRef.current = run;
 
   const switchLanguage = (cid: CompilerId) => {
     setCompilerId(cid);
     // Never overwrite real code silently: empty or starter-only gets the new starter, anything else asks first.
-    if (isEmptyOrStarter(editorRef.current?.getValue() ?? "")) setCode(byId(cid).hello);
+    if (isEmptyOrStarter(editorRef.current?.getValue() ?? "")) replaceCode(byId(cid).hello);
     else setOfferStarter(cid);
     // Sync language to other users, with who switched it (one transaction, so both arrive together)
     const rs = roomStateRef.current;
@@ -150,6 +114,15 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
       rs.set("compilerId", cid);
       rs.set("compilerBy", user.name.replace(/["\\<>\n]/g, "").slice(0, 24));
     });
+  };
+
+  // Writes text over the editor's content as one undoable edit; y-monaco shares it with the room like any keystroke.
+  // (The editors used to be React-controlled as well: a stale value could overwrite remote edits and corrupt the doc.)
+  const replaceCode = (text: string) => {
+    const editor = editorRef.current, model = editor?.getModel();
+    if (!editor || !model) return;
+    editor.executeEdits("starter", [{ range: model.getFullModelRange(), text }]);
+    editor.pushUndoStop();
   };
 
   // Mode lives in the URL so a reload (or a shared link) opens in the same mode.
@@ -168,13 +141,13 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
     } catch { /* blocked */ }
   };
 
-  // Runs left and service health for the banner. The backend caches /status for 60 s, so polling at that pace
+  // Runs left and service health for the banner. The Worker caches /status for 60 s, so polling at that pace
   // costs the API nothing extra however many rooms are open; hidden tabs skip it.
   useEffect(() => {
     let active = true;
     const load = () => {
       if (document.hidden) return;
-      fetch("/api/backend/status")
+      fetch(`${process.env.NEXT_PUBLIC_PARTYKIT_URL ?? ""}/status`)
         .then(r => (r.ok ? (r.json() as Promise<Record<string, unknown>>) : null))
         .then(d => { if (active && d && typeof d.service === "string") setRunStatus(d as unknown as RunStatus); })
         .catch(() => { /* no banner rather than a wrong one */ });
@@ -319,7 +292,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                     <span className="hidden sm:inline">Replace your code with the {compiler.label} starter?</span>
                     <span className="sm:hidden">{compiler.label} starter?</span>
                   </span>
-                  <button type="button" onClick={() => { setCode(compiler.hello); setOfferStarter(null); }} className="ml-1.5 h-7 shrink-0 rounded-full bg-primary px-3.5 font-semibold text-black transition-transform duration-300 active:scale-[0.97]">
+                  <button type="button" onClick={() => { replaceCode(compiler.hello); setOfferStarter(null); }} className="ml-1.5 h-7 shrink-0 rounded-full bg-primary px-3.5 font-semibold text-black transition-transform duration-300 active:scale-[0.97]">
                     Replace
                   </button>
                   <button type="button" onClick={() => setOfferStarter(null)} className="h-7 shrink-0 rounded-full px-3 font-medium text-primary/70 transition-colors duration-300 hover:bg-white/[0.06] hover:text-primary">
@@ -331,8 +304,6 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
             <div className="min-h-[16rem] flex-1">
               <Editor
                 language={compiler.monaco}
-                value={code}
-                onChange={v => setCode(v ?? "")}
                 theme="flux"
                 beforeMount={(monaco) => {
                   monaco.editor.defineTheme("flux", FLUX_THEME);
@@ -343,8 +314,9 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runRef.current());
                   editor.getDomNode()?.setAttribute("data-editor", "main");
                   if (!disconnectRef.current && modelRef.current) {
-                    const [disconnect, { getRoomState, getAwareness, getStdin, isSynced, whenSynced }] = connect(id, editor, modelRef.current, user, monaco, "main");
+                    const [disconnect, { getRoomState, getAwareness, getStdin, isSynced, whenSynced, send }] = connect(id, editor, modelRef.current, user, monaco, "main");
                     disconnectRef.current = disconnect;
+                    sendRef.current = send;
                     roomStateRef.current = getRoomState();
                     awarenessRef.current = getAwareness();
                     stdinRef.current = getStdin();
@@ -447,6 +419,9 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                           truncated: lr.get("truncated") === true,
                           timeLimit: num("timeLimit"),
                           memoryLimit: num("memoryLimit"),
+                          errorCode: typeof lr.get("errorCode") === "string" ? String(lr.get("errorCode")) : null,
+                          error: typeof lr.get("error") === "string" ? String(lr.get("error")).slice(0, 500) : "",
+                          resetsAt: typeof lr.get("resetsAt") === "string" ? String(lr.get("resetsAt")) : null,
                         });
                       }
                     };
@@ -492,7 +467,15 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                           results,
                           verdict: typeof tr.get("verdict") === "string" ? tr.get("verdict") : null,
                           compileError: typeof tr.get("compileError") === "string" ? String(tr.get("compileError")).slice(0, 20000) : null,
-                          error: typeof tr.get("error") === "string" ? String(tr.get("error")).slice(0, 500) : null,
+                          error: typeof tr.get("error") === "string"
+                            ? (() => {
+                                // Keep the room's "Batch 2 of 3: " prefix in front of the friendly message for the code.
+                                const raw = String(tr.get("error")).slice(0, 500);
+                                const batch = /^Batch \d+ of \d+: /.exec(raw)?.[0] ?? "";
+                                const code = typeof tr.get("errorCode") === "string" ? String(tr.get("errorCode")) : "";
+                                return batch + messageFor(code, { error: raw.slice(batch.length), resets_at: tr.get("resetsAt") }, 0);
+                              })()
+                            : null,
                           timeLimit: typeof tr.get("timeLimit") === "number" ? Number(tr.get("timeLimit")) : null,
                           batchIndex: typeof tr.get("batchIndex") === "number" ? Number(tr.get("batchIndex")) : 0,
                           batchCount: typeof tr.get("batchCount") === "number" ? Number(tr.get("batchCount")) : 0,
@@ -505,34 +488,18 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                     testRunRef.current.observe(updateTestRun);
                     updateTestRun();
                     
-                    // Observe running state from awareness
-                    const updateRunningBy = () => {
-                      const states = awarenessRef.current.getStates();
-                      let runner: string | null = null;
-                      states.forEach((state: any, clientId: number) => {
-                        if (clientId !== awarenessRef.current.clientID && state.running?.user?.name) {
-                          runner = state.running.user.name.replace(/["\\<>\n]/g, "").slice(0, 24);
-                        }
+                    // The room's run in progress, written by the room itself.
+                    const runStateMap = doc.getMap<any>("runState");
+                    const updateRunState = () => {
+                      const active = runStateMap.get("active");
+                      setRunState({
+                        active: active === "run" || active === "tests" ? active : null,
+                        by: String(runStateMap.get("by") ?? "").replace(/["\\<>\n]/g, "").slice(0, 24),
+                        note: typeof runStateMap.get("note") === "string" ? runStateMap.get("note") : null,
                       });
-                      setRunningBy(runner);
-                      
-                      // Interrupted only when no client (the runner's own included) still advertises this test run's id,
-                      // e.g. the runner closed the tab. Ignoring the local client used to end the runner's own run on any cursor move.
-                      const tr = testRunRef.current;
-                      if (tr && tr.get("finishedAt") === null) {
-                        const runId = tr.get("runId");
-                        let alive = false;
-                        states.forEach((state: any) => { if (state.running?.runId === runId) alive = true; });
-                        if (!alive) {
-                          tr.set("interrupted", true);
-                          tr.set("error", null); // a "retrying…" note from the runner would otherwise stay up
-                          tr.set("finishedAt", Date.now());
-                        }
-                      }
                     };
-                    
-                    awarenessRef.current.on("change", updateRunningBy);
-                    updateRunningBy();
+                    runStateMap.observe(updateRunState);
+                    updateRunState();
                   }
                 }}
                 options={{
@@ -590,7 +557,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
               {tab === "output" && (
                 <motion.div key="output" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className="flex h-full min-h-[12rem] flex-col rounded-2xl bg-[#0B0B0A] p-4">
                   {runningBy ? (
-                    <p className="font-mono text-[13px] text-primary/50">Running by {runningBy}…</p>
+                    <p className="font-mono text-[13px] text-primary/50">{runState.note ?? `Running by ${runningBy}…`}</p>
                   ) : netErr ? (
                     <p className="font-mono text-[13px] leading-relaxed text-[#FFC9A8]">{netErr}</p>
                   ) : lastRun ? (
@@ -628,15 +595,6 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                 <motion.div key="input" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className="flex h-full min-h-[12rem] flex-col rounded-2xl bg-[#0B0B0A]">
                   <Editor
                     language="plaintext"
-                    value={stdin}
-                    onChange={v => {
-                      const trimmed = (v ?? "").slice(0, 20000);
-                      setStdin(trimmed);
-                      if (stdinRef.current) {
-                        stdinRef.current.delete(0, stdinRef.current.length);
-                        stdinRef.current.insert(0, trimmed);
-                      }
-                    }}
                     theme="flux"
                     beforeMount={(monaco) => {
                       monaco.editor.defineTheme("flux", FLUX_THEME);
@@ -677,19 +635,15 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
 
               {tab === "tests" && (
                 <motion.div key="tests" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className="flex h-full min-h-[12rem] flex-col rounded-2xl bg-[#0B0B0A] p-4">
-                  <TestsTab 
-                    tests={tests} 
-                    compiler={compilerId} 
-                    code={editorRef.current?.getValue() ?? ""} 
-                    onAdd={addTest} 
-                    onEdit={editTest} 
+                  <TestsTab
+                    tests={tests}
+                    onAdd={addTest}
+                    onEdit={editTest}
                     onDelete={deleteTest}
+                    onRunAll={runAllTests}
                     testRun={testRun}
                     runningBy={runningBy}
-                    testRunRef={testRunRef}
-                    awarenessRef={awarenessRef}
-                    user={user}
-                    roomId={id}
+                    runNote={runState.active ? runState.note : sendError}
                   />
                 </motion.div>
               )}

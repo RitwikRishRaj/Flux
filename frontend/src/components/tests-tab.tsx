@@ -2,7 +2,7 @@
 
 import { memo, useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { callRunApi } from "@/lib/run-api";
+import type { TestResult } from "@/lib/test-results";
 import { Plus, Trash2, Play, Check, X, AlertCircle, Clock, ChevronDown, ChevronUp } from "lucide-react";
 
 export interface TestCase {
@@ -11,8 +11,8 @@ export interface TestCase {
   expectedOutput: string;
 }
 
-// One test's outcome, shared through Yjs. verdict is the API's (docs/run-tests); status drives the colours.
-export type TestResult = { status: string; verdict?: string; actual?: string; stderr?: string; durationMs?: number; truncated?: boolean };
+export type { TestResult };
+// The room's last test run, written by the room (party/run/jobs.ts) and shared through Yjs.
 export type TestRunState = {
   runId: string; runBy: string; runById: string; startedAt: number; finishedAt: number | null; interrupted: boolean;
   results: Map<string, TestResult>;
@@ -23,16 +23,6 @@ export type TestRunState = {
 
 const MAX_CASES = 32;            // the free plan's tests per run-tests request
 const MAX_FIELD = 10000;
-const CLIENT_TIMEOUT_MS = 75000; // the API gives a run-tests request 60 s, plus network
-const FALLBACK_BATCH = 8;        // keeps the full time limit in every language if the batch-size call fails
-
-// Leaving the page aborts the batch in flight; that should read as an interrupted run, not a server failure.
-let pageLeaving = false;
-if (typeof window !== "undefined") {
-  window.addEventListener("pagehide", () => { pageLeaving = true; });
-  window.addEventListener("pageshow", () => { pageLeaving = false; }); // back from the back/forward cache
-}
-
 const VERDICT_LABEL: Record<string, string> = {
   accepted: "pass",
   wrong_answer: "wrong answer",
@@ -54,13 +44,6 @@ const VERDICT_HINT: Record<string, string> = {
   skipped: "Didn't start in time. Run again to finish it.",
   internal_error: "The run service failed on this test. Run again.",
 };
-
-export const statusFromVerdict = (verdict: string) =>
-  verdict === "accepted" ? "pass" : verdict === "wrong_answer" ? "fail" : verdict === "skipped" ? "skipped" : "error";
-
-// The API's rule, applied across batches: the first test (in order) that failed decides; skipped only makes it incomplete.
-export const overallVerdict = (verdicts: string[]) =>
-  verdicts.find(v => v !== "accepted" && v !== "skipped") ?? (verdicts.includes("skipped") ? "incomplete" : "accepted");
 
 const normalize = (s: string) =>
   s.replace(/\r\n/g, "\n").split("\n").map(l => l.trimEnd()).join("\n").trimEnd();
@@ -344,128 +327,25 @@ const TestCard = memo(function TestCard({
 
 export function TestsTab({
   tests,
-  compiler,
-  code,
   onAdd,
   onEdit,
   onDelete,
+  onRunAll,
   testRun,
   runningBy,
-  testRunRef,
-  awarenessRef,
-  user,
-  roomId,
+  runNote,
 }: {
   tests: TestCase[];
-  compiler: string;
-  code: string;
   onAdd: () => void;
   onEdit: (id: string, field: "stdin" | "expectedOutput", value: string) => void;
   onDelete: (id: string) => void;
+  onRunAll: () => void;               // asks the room to run them; the room runs the batches and shares the results
   testRun: TestRunState | null;
-  runningBy: string | null;
-  testRunRef: React.MutableRefObject<any>;
-  awarenessRef: React.MutableRefObject<any>;
-  user: { id: string; name: string };
-  roomId: string;
+  runningBy: string | null;           // whoever has a run going in the room (code or tests), from the shared doc
+  runNote: string | null;             // e.g. "The run queue is busy, retrying…", or that a request couldn't be sent
 }) {
-  // A run is in progress while the shared testRun has no finishedAt; that survives this tab remounting and covers
-  // everyone. selfRunning covers the moment before the run is written (while the batch size is fetched).
-  const [selfRunning, setSelfRunning] = useState(false);
-  const busy = selfRunning || !!runningBy || (!!testRun && testRun.finishedAt === null);
-
-  const runAll = async () => {
-    if (busy || tests.length === 0) return;
-    setSelfRunning(true);
-
-    const runId = crypto.randomUUID();
-    awarenessRef.current?.setLocalStateField("running", { runId, user: { name: user.name, id: user.id } });
-
-    const cases = tests.slice(0, MAX_CASES);
-    let batchSize = FALLBACK_BATCH;
-    try {
-      const plan = (await (await fetch(`/api/backend/run-tests/plan?compiler=${encodeURIComponent(compiler)}`)).json()) as Record<string, any>;
-      if (Number.isInteger(plan.batch_size) && plan.batch_size > 0) batchSize = plan.batch_size;
-    } catch { /* keep the fallback */ }
-    const batches: TestCase[][] = [];
-    for (let i = 0; i < cases.length; i += batchSize) batches.push(cases.slice(i, i + batchSize));
-
-    testRunRef.current?.doc!.transact(() => {
-      testRunRef.current.set("runId", runId);
-      testRunRef.current.set("runBy", user.name.replace(/["\\<>\n]/g, "").slice(0, 24));
-      testRunRef.current.set("runById", user.id);
-      testRunRef.current.set("startedAt", Date.now());
-      testRunRef.current.set("finishedAt", null);
-      testRunRef.current.set("interrupted", false);
-      testRunRef.current.set("results", {});
-      testRunRef.current.set("verdict", null);
-      testRunRef.current.set("compileError", null);
-      testRunRef.current.set("error", null);
-      testRunRef.current.set("timeLimit", null);
-      testRunRef.current.set("batchIndex", 1);
-      testRunRef.current.set("batchCount", batches.length);
-    });
-
-    const results: Record<string, TestResult> = {};
-    let compileError: string | null = null, error: string | null = null, timeLimit: number | null = null;
-
-    // One batch at a time: the account runs 4 tests at once, so parallel batches would only queue behind each other.
-    for (let b = 0; b < batches.length && !error && !compileError; b++) {
-      const batch = batches[b];
-      testRunRef.current?.set("batchIndex", b + 1);
-      // room + run_id: the server allows one run per room; batches of this run share its lock (final releases it).
-      const call = await callRunApi("/run-tests", {
-        compiler, code, room: roomId, run_id: runId, final: b === batches.length - 1,
-        tests: batch.map(tc => ({ input: tc.stdin, expected_output: tc.expectedOutput })),
-      }, { timeoutMs: CLIENT_TIMEOUT_MS, onRetry: () => testRunRef.current?.set("error", "The run queue is busy, retrying…") });
-
-      if (!call.ok) {
-        // Leaving the page aborts the request before pagehide fires. Wait a moment: if the page is going away it
-        // is gone by then and writes nothing, and the others mark the run interrupted when this client disappears.
-        if (call.code === "network") await new Promise(r => setTimeout(r, 500));
-        error = call.message;
-      } else {
-          // Every field is checked before use; the API's answer is untrusted input.
-          const data = call.data;
-          testRunRef.current?.set("error", null); // clears a "retrying…" note
-          if (typeof data.time_limit === "number") timeLimit = Math.min(timeLimit ?? Infinity, data.time_limit);
-          if (typeof data.compile_error === "string") compileError = data.compile_error.slice(0, 20000);
-          // Results come back in the order the tests were sent (docs/run-tests).
-          batch.forEach((tc, i) => {
-            const r = Array.isArray(data.tests) ? data.tests[i] : null;
-            if (!r || typeof r.verdict !== "string") return;
-            const seconds = parseFloat(r.time);
-            results[tc.id] = {
-              status: statusFromVerdict(r.verdict),
-              verdict: r.verdict,
-              actual: typeof r.output === "string" ? r.output.slice(0, 20000) : "",
-              stderr: typeof r.error === "string" ? r.error.slice(0, 20000) : "",
-              ...(Number.isFinite(seconds) ? { durationMs: Math.round(seconds * 1000) } : {}),
-              truncated: r.truncated === true,
-            };
-          });
-      }
-      if (error && batches.length > 1) error = `Batch ${b + 1} of ${batches.length}: ${error}`;
-      // The same code won't compile in later batches either, so mark them without spending runs on them.
-      if (compileError) for (const tc of cases) results[tc.id] ??= { status: "error", verdict: "compilation_error" };
-      testRunRef.current?.set("results", { ...results }); // share progress after every batch
-    }
-
-    // A failed batch leaves later tests unrun, so there is no overall verdict to claim.
-    const interrupted = pageLeaving && error !== null;
-    const verdict = error ? null : overallVerdict(cases.map(tc => results[tc.id]?.verdict ?? "skipped"));
-    testRunRef.current?.doc!.transact(() => {
-      testRunRef.current.set("results", results);
-      testRunRef.current.set("verdict", verdict);
-      testRunRef.current.set("compileError", compileError);
-      testRunRef.current.set("error", interrupted ? null : error);
-      testRunRef.current.set("interrupted", interrupted);
-      testRunRef.current.set("timeLimit", timeLimit);
-      testRunRef.current.set("finishedAt", Date.now());
-    });
-    awarenessRef.current?.setLocalStateField("running", null);
-    setSelfRunning(false);
-  };
+  const busy = !!runningBy;
+  const runAll = () => { if (!busy && tests.length > 0) onRunAll(); };
 
   const results = testRun?.results || new Map();
   const passed = Array.from(results.values()).filter(r => r.status === "pass").length;
@@ -588,6 +468,9 @@ export function TestsTab({
           <p className="rounded-lg bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200/90">
             Only the first {MAX_CASES} tests run. That&apos;s the free plan&apos;s limit per run.
           </p>
+        )}
+        {runNote && (
+          <p className="rounded-lg bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200/90">{runNote}</p>
         )}
         {testRun?.error && (
           <p role="alert" className="rounded-lg bg-red-500/[0.08] px-3 py-2 text-[11px] text-red-300">{testRun.error}</p>

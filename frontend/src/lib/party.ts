@@ -118,6 +118,13 @@ export function connect(
     // isSynced is still false while the server's saved state is being applied, so callers can tell history from live edits.
     {
       getRoomState: () => roomState, getAwareness: () => provider.awareness, getStdin: () => stdin, isSynced: () => provider.synced,
+      // A request to the room (run, runTests), sent as a y-partyserver custom message on the same websocket, after any edits.
+      // false when not connected: sendMessage would drop it (or throw while connecting) without a word.
+      send: (message: object) => {
+        if (!provider.wsconnected) return false;
+        provider.sendMessage(JSON.stringify(message));
+        return true;
+      },
       // Runs cb once the server's saved state is in (right away if it already is). Returns an unsubscribe.
       whenSynced: (cb: () => void) => {
         if (provider.synced) { cb(); return () => {}; }

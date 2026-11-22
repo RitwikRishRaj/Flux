@@ -4,32 +4,21 @@ A real-time collaborative code editor with in-browser execution.
 
 ## Quick start
 
-### 1. Backend (code execution)
-
-```bash
-cd backend
-cp .env.example .env
-# edit .env and paste your API key from api.onlinecompiler.io
-npm run dev
-```
-
-Runs on `http://localhost:8788`. Health check: `curl http://localhost:8788/health`.
-
-### 2. Sync server (live editing)
-
-In a second terminal:
+### 1. Worker (live editing and code execution)
 
 ```bash
 cd frontend
 cp .env.example .env.local
+# put your onlinecompiler.io API key in .dev.vars (gitignored):
+echo ONLINECOMPILER_API_KEY=your-key > .dev.vars
 npm run wrangler
 ```
 
-Runs on `http://127.0.0.1:8787`, wrangler dev's default port (which is why the backend uses 8788).
+Runs on `http://127.0.0.1:8787`. The room Durable Objects sync the editor and run code; `GET /status` reports runs left.
 
-### 3. Frontend (Next.js app)
+### 2. Frontend (Next.js app)
 
-In a third terminal:
+In a second terminal:
 
 ```bash
 cd frontend
@@ -42,12 +31,11 @@ Opens at `http://localhost:3000`.
 
 ```
 Flux/
-├── backend/           # Node server (port 8788)
-│   ├── server.js      # /health, /run, /run-tests and /run-tests/plan
-│   ├── .env           # API key (not committed)
-│   └── package.json
-│
-└── frontend/          # Next.js 15 app
+└── frontend/          # Next.js 15 app + the Cloudflare Worker
+    ├── party/
+    │   ├── server.ts                    # Worker entry, FluxRoom Durable Object (sync + runs code)
+    │   ├── limiter.ts                   # Limiter Durable Object (slot cap, daily budget, caches)
+    │   └── run/                         # run logic: batching, API calls, errors (unit-tested)
     ├── src/
     │   ├── app/
     │   │   ├── page.tsx                 # Landing hero
@@ -62,7 +50,8 @@ Flux/
     │       ├── compilers.ts             # 12 supported languages
     │       └── flux-monaco.ts           # Custom dark theme
     ├── package.json
-    ├── next.config.mjs                  # Rewrite /api/backend → :8788
+    ├── wrangler.jsonc                   # Worker config: Durable Objects, vars
+    ├── .dev.vars                        # local Worker secrets (not committed)
     └── tailwind.config.ts
 ```
 
@@ -70,7 +59,7 @@ Flux/
 
 - **Landing page** (`/`): Hero with video background, create/join room panel
 - **Room page** (`/room/[id]`): Monaco editor, language picker, run button, Output/Input tabs
-- **Code execution**: Runs through backend → onlinecompiler.io API (key never exposed to browser)
+- **Code execution**: the room's Durable Object calls the onlinecompiler.io API (key never exposed to the browser) and shares results with everyone in the room
 
 ## Next steps
 
@@ -85,6 +74,6 @@ Get one at https://api.onlinecompiler.io:
 1. Sign up
 2. Navigate to **API Keys**
 3. Create a key (REST API type)
-4. Paste into `backend/.env`
+4. Put it in `frontend/.dev.vars` as `ONLINECOMPILER_API_KEY=...` (production: `npx wrangler secret put ONLINECOMPILER_API_KEY`)
 
 Free tier handles reasonable usage. For high throughput, consider self-hosting Piston.
