@@ -10,6 +10,7 @@ import { STATUS_TTL_MS, summarizeStatus, TtlCache } from "./status";
 import { BusyError, SlotPool } from "./slots";
 import { isAllowedOrigin } from "./origin";
 import { verifyTurnstile } from "./turnstile";
+import { idleAction, parseIdleMinutes } from "./idle";
 
 const result = (status: number, body: unknown): UpstreamResult =>
   ({ status, contentType: "application/json", text: typeof body === "string" ? body : JSON.stringify(body) });
@@ -214,6 +215,20 @@ describe("turnstile", () => {
     assert.strictEqual(sent.length, 2);
     const down = (async () => { throw new TypeError("fetch failed"); }) as unknown as typeof fetch;
     assert.strictEqual(await verifyTurnstile("secret", "tok", null, down), false);
+  });
+});
+
+describe("idle rooms", () => {
+  test("deleted only when nobody is here, nothing is running, and there is something to delete", () => {
+    assert.strictEqual(idleAction({ connections: 0, running: false, hasData: true }), "delete");
+    assert.strictEqual(idleAction({ connections: 1, running: false, hasData: true }), "keep", "someone came back");
+    assert.strictEqual(idleAction({ connections: 0, running: true, hasData: true }), "later", "a run is still finishing");
+    assert.strictEqual(idleAction({ connections: 0, running: false, hasData: false }), "keep", "already empty: the retry after a delete stops here");
+  });
+  test("ROOM_IDLE_MINUTES: a positive number, otherwise 2", () => {
+    assert.strictEqual(parseIdleMinutes("10"), 10);
+    assert.strictEqual(parseIdleMinutes("0.1"), 0.1);
+    for (const bad of [undefined, "", "0", "-1", "soon"]) assert.strictEqual(parseIdleMinutes(bad), 2);
   });
 });
 

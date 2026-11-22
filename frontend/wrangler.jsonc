@@ -17,6 +17,7 @@
   // Local dev values; production gets its own in step 4b.
   "vars": {
     "DAILY_RUN_BUDGET": "3000",
+    "ROOM_IDLE_MINUTES": "2",
     "ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000"
   }
 }

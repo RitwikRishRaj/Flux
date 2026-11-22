@@ -1,5 +1,5 @@
 import { YServer } from "y-partyserver";
-import { routePartykitRequest, type Connection } from "partyserver";
+import { routePartykitRequest, type Connection, type ConnectionContext } from "partyserver";
 import type * as Y from "yjs";
 import type { Env } from "./env";
 import { limiterFor } from "./limiter";
@@ -10,6 +10,7 @@ import { fetchUsage, postUpstream } from "./run/upstream";
 import type { CompilerList } from "./run/compilers";
 import { isAllowedOrigin } from "./run/origin";
 import { verifyTurnstile } from "./run/turnstile";
+import { idleAction, parseIdleMinutes } from "./run/idle";
 
 export { Limiter } from "./limiter";
 
@@ -36,6 +37,8 @@ export class FluxRoom extends YServer<Env> {
 
   // One run per room (code or tests). Set before any await, so a second request meanwhile sees it.
   private running = false;
+  // How long a room is kept once nobody is in it (ROOM_IDLE_MINUTES, default 2).
+  private readonly idleMs = parseIdleMinutes(this.env.ROOM_IDLE_MINUTES) * 60_000;
 
   async onLoad() {
     const persisted = await this.ctx.storage.get<Uint8Array>("doc");
@@ -53,6 +56,31 @@ export class FluxRoom extends YServer<Env> {
         if (testRun.get("finishedAt") === null) { testRun.set("interrupted", true); testRun.set("finishedAt", Date.now()); }
       });
     }
+    // Safety net: every room that loads has a deletion alarm, even if its last close was never seen. Someone connecting
+    // cancels it; with people present it just finds them and keeps the room.
+    if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + this.idleMs);
+  }
+
+  onConnect(connection: Connection, ctx: ConnectionContext) {
+    super.onConnect(connection, ctx);
+    void this.ctx.storage.deleteAlarm();
+  }
+
+  onClose(connection: Connection, code: number, reason: string, wasClean: boolean) {
+    super.onClose(connection, code, reason, wasClean);
+    const othersLeft = [...this.getConnections()].some(c => c.id !== connection.id);
+    if (!othersLeft) void this.ctx.storage.setAlarm(Date.now() + this.idleMs);
+  }
+
+  async onAlarm() {
+    const [doc, created] = await Promise.all([this.ctx.storage.get("doc"), this.ctx.storage.get("createdAt")]);
+    const action = idleAction({ connections: [...this.getConnections()].length, running: this.running, hasData: !!doc || !!created });
+    if (action === "later") await this.ctx.storage.setAlarm(Date.now() + this.idleMs);
+    if (action !== "delete") return;
+    await this.ctx.storage.deleteAll(); // also deletes the alarm (compatibility date after 2026-02-24)
+    // Drop the copy in memory too, so it can't be served to the next visitor or saved back. The alarm counts as failed
+    // and is retried once; the retry finds nothing stored and keeps the (now empty) room.
+    this.ctx.abort("room deleted after being empty");
   }
 
   // A brand-new room: never saved, never marked created, nobody in it. Only its first connection must carry a

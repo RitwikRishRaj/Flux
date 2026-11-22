@@ -12,8 +12,8 @@ export default function Privacy() {
 
       <h2 className="mt-8 text-lg font-medium text-primary">Rooms</h2>
       <p className="mt-2">
-        A room&apos;s code, input, test cases and run results are stored on Cloudflare so the room survives reloads, and are deleted after a period without
-        activity. Anyone with a room&apos;s link can open it, so don&apos;t put secrets in a room.
+        A room&apos;s code, input, test cases and run results are stored on Cloudflare so the room survives reloads, and are deleted a couple of
+        minutes after the last person leaves. Anyone with a room&apos;s link can open it, so don&apos;t put secrets in a room.
       </p>
 
       <h2 className="mt-8 text-lg font-medium text-primary">Running code</h2>
