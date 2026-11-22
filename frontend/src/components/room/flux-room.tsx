@@ -624,6 +624,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                       if (stdinRef.current && stdinModelRef.current && awarenessRef.current) {
                         import("y-monaco").then(({ MonacoBinding }) => {
                           const binding = new MonacoBinding(stdinRef.current!, stdinModelRef.current, new Set([editor]), awarenessRef.current);
+                          stdinModelRef.current!.setEOL(0); // LF on every OS, as in party.ts
                           disconnectStdinRef.current = () => binding.destroy();
                         });
                       }

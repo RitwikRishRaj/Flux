@@ -107,6 +107,8 @@ export function connect(
       import("y-monaco").then(({ MonacoBinding }) => {
         if (model.isDisposed()) return;
         binding = new MonacoBinding(ytext, model, new Set([editor]), provider.awareness);
+        // Monaco defaults to CRLF on Windows; the shared text must be LF everywhere or offsets differ between users.
+        model.setEOL(0); // EndOfLineSequence.LF
 
         // Seed template on first sync if document is empty
         if (!seeded && ytext.length === 0) {
