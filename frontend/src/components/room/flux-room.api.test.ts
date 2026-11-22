@@ -54,7 +54,7 @@ describe('flux-room run API', () => {
       body: JSON.stringify({ compiler: 'python-3.14', code: '', input: '' }),
     });
 
-    const data = await res.json();
+    const data = (await res.json()) as { error?: string };
     const netErr = data.error ?? `Request failed (${res.status})`;
 
     expect(res.ok).toBe(false);
@@ -74,7 +74,7 @@ describe('flux-room run API', () => {
       body: JSON.stringify({ compiler: 'python-3.14', code: '', input: '' }),
     });
 
-    const data = await res.json();
+    const data = (await res.json()) as { error?: string };
     const netErr = data.error ?? `Request failed (${res.status})`;
 
     expect(res.ok).toBe(false);

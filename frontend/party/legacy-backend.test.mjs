@@ -1,13 +1,19 @@
-// Run with: npm test (node --test). No network: the API is replaced by fakes.
-const test = require("node:test");
-const assert = require("node:assert");
-process.env.FLUX_QUEUE_WAIT_MS = "200"; // set before loading server.js, so "busy" takes 0.2 s here, not 10 s
+// @vitest-environment node
+// Ported from backend/server.test.js (node:test) to Vitest, still plain JS (.mjs keeps it out of the TypeScript check).
+// Step 1a rewrites it in TypeScript against the Worker's party/run modules; until then it loads the Node backend as it
+// is. No network: the API is replaced by fakes.
+import { test } from "vitest";
+import assert from "node:assert";
+import { createRequire } from "node:module";
+
+process.env.FLUX_QUEUE_WAIT_MS = "200"; // before loading server.js, so "busy" takes 0.2 s here, not 10 s
+const require = createRequire(import.meta.url);
 const {
   testTimeLimit, maxBatchSize, suggestedTimeLimit, runTestsWithRetry, sanitize,
   acquireSlots, releaseSlots, BusyError, lockRoom, unlockRoom, sweepRoomLocks, roomLocks, classifyUpstreamFailure,
   nextBatchWillCome, ROOM_RE, parseCompilerList, resolveCompiler, localCompilers,
   summarizeStatus, getStatus, resetStatusCache, STATUS_TTL_MS,
-} = require("./server.js");
+} = require("../../backend/server.js");
 
 test("testTimeLimit matches the API's suggested limits, capped at 10 s", () => {
   // [compiler, tests, largest time_limit the API accepted], from its 400 refusals
