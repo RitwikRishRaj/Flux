@@ -2,6 +2,7 @@ import * as Y from "yjs";
 import YProvider from "y-partyserver/provider";
 import type * as monacoNS from "monaco-editor";
 import { byId } from "./compilers";
+import { getTurnstileToken } from "./turnstile";
 
 let PARTY_URL: string | undefined;
 
@@ -22,9 +23,23 @@ export function connect(
   const roomState = doc.getMap<string>("roomState");
   const meta = doc.getMap<unknown>("meta");
 
+  // Connect at once without a Turnstile token: joining or reconnecting to an existing room never waits for one.
+  // Only a brand-new room answers 4001 ("needs a token"); then get one (an invisible challenge takes ~2 s) and retry once.
+  let token: Promise<string | null> | null = null;
   const provider = new YProvider(PARTY_URL, roomId, doc, {
     party: "main",
-    connect: true
+    connect: true,
+    params: async (): Promise<Record<string, string>> => {
+      const t = token && (await token); // resolved after the first retry, so later reconnects don't wait
+      return t ? { cf: t } : {};
+    },
+  });
+  let onRefused = () => {};
+  provider.on("connection-close", (event: CloseEvent | null) => {
+    if (event?.code !== 4001) return;
+    if (!token) { token = getTurnstileToken(10_000); return; } // the provider reconnects; params waits for the token
+    provider.disconnect(); // refused even with a token (or none could be had): retrying can't help
+    onRefused();
   });
 
   provider.awareness.setLocalStateField("user", {
@@ -120,6 +135,7 @@ export function connect(
       getRoomState: () => roomState, getAwareness: () => provider.awareness, getStdin: () => stdin, isSynced: () => provider.synced,
       // A request to the room (run, runTests), sent as a y-partyserver custom message on the same websocket, after any edits.
       // false when not connected: sendMessage would drop it (or throw while connecting) without a word.
+      refused: (cb: () => void) => { onRefused = cb; },
       send: (message: object) => {
         if (!provider.wsconnected) return false;
         provider.sendMessage(JSON.stringify(message));

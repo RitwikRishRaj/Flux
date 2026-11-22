@@ -164,6 +164,7 @@ const FluxHero = () => {
               >
 Flux is a collaborative IDE in your browser. Open a room, share the link, and write, run and ship code together in real time.
               </motion.p>
+              <a href="/privacy" className="text-xs text-primary/50 underline-offset-4 transition-colors hover:text-primary hover:underline">Privacy</a>
 
 
             </div>

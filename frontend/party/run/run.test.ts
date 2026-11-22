@@ -9,6 +9,7 @@ import { checkCode, checkTests, ROOM_RE } from "./validate";
 import { STATUS_TTL_MS, summarizeStatus, TtlCache } from "./status";
 import { BusyError, SlotPool } from "./slots";
 import { isAllowedOrigin } from "./origin";
+import { verifyTurnstile } from "./turnstile";
 
 const result = (status: number, body: unknown): UpstreamResult =>
   ({ status, contentType: "application/json", text: typeof body === "string" ? body : JSON.stringify(body) });
@@ -199,6 +200,20 @@ describe("origin", () => {
     assert.ok(!isAllowedOrigin("http://localhost:3001", allowed), "port matters");
     assert.ok(!isAllowedOrigin(null, allowed), "no Origin header");
     assert.ok(!isAllowedOrigin("http://localhost:3000", undefined), "unset list allows nothing");
+  });
+});
+
+describe("turnstile", () => {
+  test("only a success from siteverify passes; no token, an error or an unreachable siteverify refuse", async () => {
+    const sent: any[] = [];
+    const answer = (body: unknown) => (async (_url: unknown, init?: RequestInit) => (sent.push(JSON.parse(String(init?.body))), new Response(JSON.stringify(body)))) as unknown as typeof fetch;
+    assert.strictEqual(await verifyTurnstile("secret", "tok", "1.2.3.4", answer({ success: true })), true);
+    assert.deepStrictEqual(sent[0], { secret: "secret", response: "tok", remoteip: "1.2.3.4" });
+    assert.strictEqual(await verifyTurnstile("secret", "tok", null, answer({ success: false, "error-codes": ["invalid-input-response"] })), false);
+    assert.strictEqual(await verifyTurnstile("secret", null, null, answer({ success: true })), false, "no token, no call");
+    assert.strictEqual(sent.length, 2);
+    const down = (async () => { throw new TypeError("fetch failed"); }) as unknown as typeof fetch;
+    assert.strictEqual(await verifyTurnstile("secret", "tok", null, down), false);
   });
 });
 

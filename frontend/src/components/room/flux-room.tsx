@@ -51,6 +51,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
   const [offerStarter, setOfferStarter] = useState<CompilerId | null>(null);
   const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
+  const [refused, setRefused] = useState(false); // a brand-new room the browser couldn't be verified for
   const editorRef = useRef<monacoNS.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monacoNS.editor.ITextModel | null>(null);
   const stdinEditorRef = useRef<monacoNS.editor.IStandaloneCodeEditor | null>(null);
@@ -156,7 +157,9 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
     const timer = setInterval(load, 60_000);
     return () => { active = false; clearInterval(timer); };
   }, []);
-  const banner = bannerFor(runStatus);
+  const banner = refused
+    ? "This browser couldn't be verified, so the new room wasn't created. Reload the page to try again."
+    : bannerFor(runStatus);
 
   // Each new notice restarts the timer, so back-to-back switches show the latest for the full time.
   useEffect(() => {
@@ -314,9 +317,10 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runRef.current());
                   editor.getDomNode()?.setAttribute("data-editor", "main");
                   if (!disconnectRef.current && modelRef.current) {
-                    const [disconnect, { getRoomState, getAwareness, getStdin, isSynced, whenSynced, send }] = connect(id, editor, modelRef.current, user, monaco, "main");
+                    const [disconnect, { getRoomState, getAwareness, getStdin, isSynced, whenSynced, send, refused: onRefused }] = connect(id, editor, modelRef.current, user, monaco, "main");
                     disconnectRef.current = disconnect;
                     sendRef.current = send;
+                    onRefused(() => setRefused(true));
                     roomStateRef.current = getRoomState();
                     awarenessRef.current = getAwareness();
                     stdinRef.current = getStdin();

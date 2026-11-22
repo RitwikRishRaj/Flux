@@ -8,4 +8,5 @@ export type Env = {
   ONLINECOMPILER_API_KEY?: string;            // secret
   DAILY_RUN_BUDGET?: string;                  // var; runs per UTC day, default 3000
   ALLOWED_ORIGINS?: string;                   // var; comma-separated page origins allowed to open rooms
+  TURNSTILE_SECRET_KEY?: string;              // secret; checks the token when a brand-new room is created
 };

@@ -9,8 +9,17 @@ import { MAX_TESTS } from "./run/limits";
 import { fetchUsage, postUpstream } from "./run/upstream";
 import type { CompilerList } from "./run/compilers";
 import { isAllowedOrigin } from "./run/origin";
+import { verifyTurnstile } from "./run/turnstile";
 
 export { Limiter } from "./limiter";
+
+// A websocket that opens and closes at once with a code the page can read (a refused upgrade looks like a network error).
+const closedSocket = (code: number, reason: string) => {
+  const { 0: client, 1: server } = new WebSocketPair();
+  server.accept();
+  server.close(code, reason);
+  return new Response(null, { status: 101, webSocket: client });
+};
 
 const cleanName = (value: unknown) => String(value ?? "").replace(/["\\<>\n]/g, "").slice(0, 24) || "Someone";
 
@@ -44,6 +53,17 @@ export class FluxRoom extends YServer<Env> {
         if (testRun.get("finishedAt") === null) { testRun.set("interrupted", true); testRun.set("finishedAt", Date.now()); }
       });
     }
+  }
+
+  // A brand-new room: never saved, never marked created, nobody in it. Only its first connection must carry a
+  // Turnstile token; joining or reconnecting to any other room needs nothing. Called by the Worker over RPC.
+  async isNew() {
+    const [doc, created] = await Promise.all([this.ctx.storage.get("doc"), this.ctx.storage.get("createdAt")]);
+    return !doc && !created && [...this.getConnections()].length === 0;
+  }
+
+  async markCreated() {
+    await this.ctx.storage.put("createdAt", Date.now());
   }
 
   async onSave() {
@@ -183,9 +203,21 @@ export default {
     }
     // Rooms (websocket and plain requests) only for pages on ALLOWED_ORIGINS, refused before the room is created.
     const refuse = async () => (allowed ? undefined : new Response("Origin not allowed", { status: 403 }));
+    const beforeConnect = async (req: Request, lobby: { name: string }) => {
+      if (!allowed) return refuse();
+      const room = env.Main.get(env.Main.idFromName(lobby.name));
+      if (!(await room.isNew())) return undefined;
+      // shortcut: with no TURNSTILE_SECRET_KEY, new rooms aren't checked; the deploy config requires the secret.
+      if (env.TURNSTILE_SECRET_KEY) {
+        const ok = await verifyTurnstile(env.TURNSTILE_SECRET_KEY, new URL(req.url).searchParams.get("cf"), req.headers.get("CF-Connecting-IP"));
+        if (!ok) return closedSocket(4001, "Turnstile verification failed");
+      }
+      await room.markCreated();
+      return undefined;
+    };
     // routePartykitRequest exposes every Durable Object binding it is given as /parties/<name>/...; only rooms are public.
     return (
-      (await routePartykitRequest(request, { Main: env.Main } as Env, { onBeforeConnect: refuse, onBeforeRequest: refuse })) ||
+      (await routePartykitRequest(request, { Main: env.Main } as Env, { onBeforeConnect: beforeConnect, onBeforeRequest: refuse })) ||
       new Response("Not Found", { status: 404 })
     );
   }
