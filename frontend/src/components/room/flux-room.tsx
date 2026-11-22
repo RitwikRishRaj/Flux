@@ -5,9 +5,10 @@ import { useEffect, useRef, useState } from "react";
 import type * as monacoNS from "monaco-editor";
 import * as Y from "yjs";
 import { motion } from "framer-motion";
-import { ArrowLeft, Check, ChevronDown, Link2, Loader2, Play, SquareTerminal, FlaskConical, Terminal } from "lucide-react";
+import { ArrowLeft, Check, Link2, Loader2, Play, SquareTerminal, FlaskConical, Terminal } from "lucide-react";
 import { COMPILERS, RETIRED, byId, isEmptyOrStarter, describeExit, formatSeconds, formatMemory, type CompilerId } from "@/lib/compilers";
 import { FLUX_THEME } from "@/lib/flux-monaco";
+import { LanguagePicker } from "@/components/room/language-picker";
 import { connect, partyOrigin } from "@/lib/party";
 import { bannerFor, messageFor, type RunStatus } from "@/lib/run-api";
 import { TestsTab } from "@/components/tests-tab";
@@ -240,11 +241,8 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
           ))}
         </div>
 
-        <div className={`relative ml-1 ${mode === "web" ? "hidden" : ""}`}>
-          <select value={compilerId} onChange={e => switchLanguage(e.target.value as CompilerId)} aria-label="Language" className="h-9 appearance-none rounded-full bg-transparent pl-4 pr-8 text-sm font-medium text-primary outline-none transition-colors hover:bg-white/[0.06] focus:bg-white/[0.06]">
-            {COMPILERS.map(c => <option key={c.id} value={c.id} className="bg-ground">{c.label}</option>)}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-primary/50" strokeWidth={1.5} />
+        <div className={`ml-1 ${mode === "web" ? "hidden" : ""}`}>
+          <LanguagePicker value={compilerId} onChange={switchLanguage} />
         </div>
 
         <div className="flex-1" />
@@ -597,6 +595,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
 
               {tab === "input" && (
                 <motion.div key="input" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className="flex h-full min-h-[12rem] flex-col rounded-2xl bg-[#0B0B0A]">
+                  {compiler.inputHint && <p className="px-4 pt-3 text-[13px] text-primary/50">{compiler.inputHint}</p>}
                   <Editor
                     language="plaintext"
                     theme="flux"

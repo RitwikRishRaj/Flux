@@ -1,27 +1,397 @@
 {
   "compilers": [
-    { "id": "python-3.14", "label": "Python", "monaco": "python", "file": "main.py", "hello": "print(\"Hello from Flux\")" },
-    { "id": "nodejs-24", "label": "JavaScript", "monaco": "javascript", "file": "main.js", "hello": "console.log(\"Hello from Flux\");" },
-    { "id": "typescript-deno", "label": "TypeScript", "monaco": "typescript", "file": "main.ts", "hello": "console.log(\"Hello from Flux\");" },
-    { "id": "g++-15", "label": "C++", "monaco": "cpp", "file": "main.cpp", "hello": "#include <iostream>\nint main() {\n  std::cout << \"Hello from Flux\\n\";\n}" },
-    { "id": "g++-15-cpp20", "label": "C++20", "monaco": "cpp", "file": "main.cpp", "hello": "#include <format>\n#include <iostream>\nint main() {\n  std::cout << std::format(\"Hello from {}\\n\", \"Flux\");\n}" },
-    { "id": "gcc-15", "label": "C", "monaco": "c", "file": "main.c", "hello": "#include <stdio.h>\nint main(void) {\n  printf(\"Hello from Flux\\n\");\n}" },
-    { "id": "openjdk-25", "label": "Java", "monaco": "java", "file": "Main.java", "hello": "public class Main {\n  public static void main(String[] args) {\n    System.out.println(\"Hello from Flux\");\n  }\n}" },
-    { "id": "kotlin-2.4", "label": "Kotlin", "monaco": "kotlin", "file": "Main.kt", "hello": "fun main() {\n  println(\"Hello from Flux\")\n}" },
-    { "id": "go-1.26", "label": "Go", "monaco": "go", "file": "main.go", "hello": "package main\n\nimport \"fmt\"\n\nfunc main() {\n  fmt.Println(\"Hello from Flux\")\n}" },
-    { "id": "rust-1.93", "label": "Rust", "monaco": "rust", "file": "main.rs", "hello": "fn main() {\n  println!(\"Hello from Flux\");\n}" },
-    { "id": "swift-6.4", "label": "Swift", "monaco": "swift", "file": "main.swift", "hello": "print(\"Hello from Flux\")" },
-    { "id": "ruby-4.0", "label": "Ruby", "monaco": "ruby", "file": "main.rb", "hello": "puts \"Hello from Flux\"" },
-    { "id": "php-8.5", "label": "PHP", "monaco": "php", "file": "main.php", "hello": "<?php\necho \"Hello from Flux\\n\";" },
-    { "id": "dotnet-csharp-10", "label": "C#", "monaco": "csharp", "file": "Program.cs", "hello": "using System;\n\nConsole.WriteLine(\"Hello from Flux\");" },
-    { "id": "dotnet-fsharp-10", "label": "F#", "monaco": "fsharp", "file": "Program.fs", "hello": "printfn \"Hello from Flux\"" },
-    { "id": "haskell-9.12", "label": "Haskell", "monaco": "haskell", "file": "main.hs", "hello": "main = putStrLn \"Hello from Flux\"" },
-    { "id": "lua-5.5", "label": "Lua", "monaco": "lua", "file": "main.lua", "hello": "print(\"Hello from Flux\")" },
-    { "id": "r-4.6", "label": "R", "monaco": "r", "file": "main.R", "hello": "cat(\"Hello from Flux\\n\")" },
-    { "id": "bash-5.2", "label": "Bash", "monaco": "shell", "file": "main.sh", "hello": "echo \"Hello from Flux\"" }
+    {
+      "id": "python-3.14",
+      "label": "Python",
+      "group": "Popular",
+      "monaco": "python",
+      "file": "main.py",
+      "hello": "import sys\n\nline = sys.stdin.readline().strip()\nprint(\"Hello from Flux\")\nprint(\"You typed:\", line)"
+    },
+    {
+      "id": "nodejs-24",
+      "label": "JavaScript",
+      "group": "Popular",
+      "monaco": "javascript",
+      "file": "main.js",
+      "hello": "const line = require(\"fs\").readFileSync(0, \"utf8\").split(\"\\n\")[0].trim();\nconsole.log(\"Hello from Flux\");\nconsole.log(\"You typed:\", line);"
+    },
+    {
+      "id": "typescript-deno",
+      "label": "TypeScript",
+      "group": "Popular",
+      "monaco": "typescript",
+      "file": "main.ts",
+      "hello": "import { readFileSync } from \"node:fs\";\n\nconst line = readFileSync(0, \"utf8\").split(\"\\n\")[0].trim();\nconsole.log(\"Hello from Flux\");\nconsole.log(\"You typed:\", line);",
+      "inputHint": "Runs on Deno: read input with readFileSync(0) or Deno.stdin, not /dev/stdin."
+    },
+    {
+      "id": "openjdk-25",
+      "label": "Java",
+      "group": "Popular",
+      "monaco": "java",
+      "file": "Main.java",
+      "hello": "import java.io.*;\n\npublic class Main {\n  public static void main(String[] args) throws IOException {\n    String line = new BufferedReader(new InputStreamReader(System.in)).readLine();\n    System.out.println(\"Hello from Flux\");\n    System.out.println(\"You typed: \" + (line == null ? \"\" : line.trim()));\n  }\n}"
+    },
+    {
+      "id": "g++-15",
+      "label": "C++",
+      "group": "Popular",
+      "monaco": "cpp",
+      "file": "main.cpp",
+      "hello": "#include <iostream>\n#include <string>\n\nint main() {\n  std::string line;\n  std::getline(std::cin, line);\n  std::cout << \"Hello from Flux\\n\";\n  std::cout << \"You typed: \" << line << \"\\n\";\n}"
+    },
+    {
+      "id": "g++-15-cpp20",
+      "label": "C++20",
+      "group": "Popular",
+      "monaco": "cpp",
+      "file": "main.cpp",
+      "hello": "#include <format>\n#include <iostream>\n#include <string>\n\nint main() {\n  std::string line;\n  std::getline(std::cin, line);\n  std::cout << std::format(\"Hello from {}\\nYou typed: {}\\n\", \"Flux\", line);\n}"
+    },
+    {
+      "id": "gcc-15",
+      "label": "C",
+      "group": "Popular",
+      "monaco": "c",
+      "file": "main.c",
+      "hello": "#include <stdio.h>\n#include <string.h>\n\nint main(void) {\n  char line[256] = \"\";\n  if (fgets(line, sizeof line, stdin)) line[strcspn(line, \"\\r\\n\")] = 0;\n  printf(\"Hello from Flux\\n\");\n  printf(\"You typed: %s\\n\", line);\n}"
+    },
+    {
+      "id": "dotnet-csharp-10",
+      "label": "C#",
+      "group": "Popular",
+      "monaco": "csharp",
+      "file": "Program.cs",
+      "hello": "using System;\n\nvar line = (Console.ReadLine() ?? \"\").Trim();\nConsole.WriteLine(\"Hello from Flux\");\nConsole.WriteLine($\"You typed: {line}\");"
+    },
+    {
+      "id": "go-1.26",
+      "label": "Go",
+      "group": "Popular",
+      "monaco": "go",
+      "file": "main.go",
+      "hello": "package main\n\nimport (\n  \"bufio\"\n  \"fmt\"\n  \"os\"\n  \"strings\"\n)\n\nfunc main() {\n  line, _ := bufio.NewReader(os.Stdin).ReadString('\\n')\n  fmt.Println(\"Hello from Flux\")\n  fmt.Println(\"You typed:\", strings.TrimSpace(line))\n}"
+    },
+    {
+      "id": "rust-1.93",
+      "label": "Rust",
+      "group": "Popular",
+      "monaco": "rust",
+      "file": "main.rs",
+      "hello": "use std::io;\n\nfn main() {\n  let mut line = String::new();\n  io::stdin().read_line(&mut line).ok();\n  println!(\"Hello from Flux\");\n  println!(\"You typed: {}\", line.trim());\n}"
+    },
+    {
+      "id": "kotlin-2.4",
+      "label": "Kotlin",
+      "group": "Popular",
+      "monaco": "kotlin",
+      "file": "Main.kt",
+      "hello": "fun main() {\n  val line = readlnOrNull()?.trim() ?: \"\"\n  println(\"Hello from Flux\")\n  println(\"You typed: $line\")\n}"
+    },
+    {
+      "id": "swift-6.4",
+      "label": "Swift",
+      "group": "Popular",
+      "monaco": "swift",
+      "file": "main.swift",
+      "hello": "let line = readLine() ?? \"\"\nprint(\"Hello from Flux\")\nprint(\"You typed: \\(line)\")"
+    },
+    {
+      "id": "zig-0.17",
+      "label": "Zig",
+      "group": "Systems",
+      "monaco": "plaintext",
+      "file": "main.zig",
+      "hello": "const std = @import(\"std\");\n\npub fn main(init: std.process.Init) !void {\n    var in_buf: [256]u8 = undefined;\n    var stdin = std.Io.File.reader(.stdin(), init.io, &in_buf);\n    var out_buf: [1024]u8 = undefined;\n    var stdout = std.Io.File.writer(.stdout(), init.io, &out_buf);\n    const out = &stdout.interface;\n\n    const line = (stdin.interface.takeDelimiter('\\n') catch null) orelse \"\";\n    try out.print(\"Hello from Flux\\n\", .{});\n    try out.print(\"You typed: {s}\\n\", .{std.mem.trim(u8, line, \" \\r\")});\n    try out.flush();\n}"
+    },
+    {
+      "id": "ldc-1.43",
+      "label": "D",
+      "group": "Systems",
+      "monaco": "plaintext",
+      "file": "main.d",
+      "hello": "import std.stdio, std.string;\n\nvoid main()\n{\n    auto line = readln().strip();\n    writeln(\"Hello from Flux\");\n    writeln(\"You typed: \", line);\n}"
+    },
+    {
+      "id": "nim-2.2",
+      "label": "Nim",
+      "group": "Systems",
+      "monaco": "plaintext",
+      "file": "main.nim",
+      "hello": "var line = \"\"\ndiscard stdin.readLine(line)\necho \"Hello from Flux\"\necho \"You typed: \", line"
+    },
+    {
+      "id": "crystal-1.22",
+      "label": "Crystal",
+      "group": "Systems",
+      "monaco": "ruby",
+      "file": "main.cr",
+      "hello": "line = gets.to_s.strip\nputs \"Hello from Flux\"\nputs \"You typed: #{line}\""
+    },
+    {
+      "id": "gnat-15",
+      "label": "Ada",
+      "group": "Systems",
+      "monaco": "plaintext",
+      "file": "main.adb",
+      "hello": "with Ada.Text_IO; use Ada.Text_IO;\n\nprocedure Main is\nbegin\n   Put_Line (\"Hello from Flux\");\n   if End_Of_File then\n      Put_Line (\"You typed: \");\n   else\n      Put_Line (\"You typed: \" & Get_Line);\n   end if;\nend Main;"
+    },
+    {
+      "id": "gfortran-15",
+      "label": "Fortran",
+      "group": "Systems",
+      "monaco": "plaintext",
+      "file": "main.f90",
+      "hello": "program main\n    implicit none\n    character(len=256) :: line\n    integer :: ios\n\n    read (*, '(a)', iostat=ios) line\n    if (ios /= 0) line = ''\n    print '(a)', 'Hello from Flux'\n    print '(2a)', 'You typed: ', trim(line)\nend program main"
+    },
+    {
+      "id": "fpc-3.2",
+      "label": "Pascal",
+      "group": "Systems",
+      "monaco": "pascal",
+      "file": "main.pas",
+      "hello": "program Main;\nvar\n  line: string;\nbegin\n  line := '';\n  if not eof then readln(line);\n  writeln('Hello from Flux');\n  writeln('You typed: ', line);\nend."
+    },
+    {
+      "id": "nasm-3",
+      "label": "Assembly",
+      "group": "Systems",
+      "monaco": "plaintext",
+      "file": "main.asm",
+      "hello": "; x86-64 Linux. A program with main is linked with the C library.\nextern fgets, printf, puts, strcspn, stdin\n\nsection .data\nhello   db \"Hello from Flux\", 0\nfmt     db \"You typed: %s\", 10, 0\neol     db 13, 10, 0\n\nsection .bss\nline    resb 256\n\nsection .text\nglobal main\nmain:\n    push rbx                    ; aligns the stack for calls\n    lea rdi, [rel hello]\n    call puts\n    lea rdi, [rel line]\n    mov esi, 256\n    mov rdx, [rel stdin]\n    call fgets                  ; at end of input, line stays empty\n    lea rdi, [rel line]\n    lea rsi, [rel eol]\n    call strcspn\n    lea rdi, [rel line]\n    mov byte [rdi + rax], 0     ; cut the line ending\n    lea rdi, [rel fmt]\n    lea rsi, [rel line]\n    xor eax, eax\n    call printf\n    pop rbx\n    xor eax, eax\n    ret"
+    },
+    {
+      "id": "clang-objc-21",
+      "label": "Objective-C",
+      "group": "Systems",
+      "monaco": "objective-c",
+      "file": "main.m",
+      "hello": "#import <Foundation/Foundation.h>\n#include <string.h>\n\nint main(void) {\n    @autoreleasepool {\n        char buf[256] = \"\";\n        if (fgets(buf, sizeof buf, stdin)) buf[strcspn(buf, \"\\r\\n\")] = 0;\n        NSString *line = [NSString stringWithUTF8String:buf];\n        printf(\"Hello from Flux\\n\");\n        printf(\"You typed: %s\\n\", line.UTF8String);\n    }\n    return 0;\n}"
+    },
+    {
+      "id": "php-8.5",
+      "label": "PHP",
+      "group": "Scripting",
+      "monaco": "php",
+      "file": "main.php",
+      "hello": "<?php\n$line = trim((string) fgets(STDIN));\necho \"Hello from Flux\\n\";\necho \"You typed: $line\\n\";"
+    },
+    {
+      "id": "ruby-4.0",
+      "label": "Ruby",
+      "group": "Scripting",
+      "monaco": "ruby",
+      "file": "main.rb",
+      "hello": "line = gets.to_s.strip\nputs \"Hello from Flux\"\nputs \"You typed: #{line}\""
+    },
+    {
+      "id": "bash-5.2",
+      "label": "Bash",
+      "group": "Scripting",
+      "monaco": "shell",
+      "file": "main.sh",
+      "hello": "read -r line\necho \"Hello from Flux\"\necho \"You typed: $line\""
+    },
+    {
+      "id": "powershell-7.6",
+      "label": "PowerShell",
+      "group": "Scripting",
+      "monaco": "powershell",
+      "file": "main.ps1",
+      "hello": "$line = [Console]::In.ReadLine()\nWrite-Output \"Hello from Flux\"\nWrite-Output \"You typed: $line\""
+    },
+    {
+      "id": "perl-5.44",
+      "label": "Perl",
+      "group": "Scripting",
+      "monaco": "perl",
+      "file": "main.pl",
+      "hello": "my $line = <STDIN> // \"\";\nchomp $line;\nprint \"Hello from Flux\\n\";\nprint \"You typed: $line\\n\";"
+    },
+    {
+      "id": "lua-5.5",
+      "label": "Lua",
+      "group": "Scripting",
+      "monaco": "lua",
+      "file": "main.lua",
+      "hello": "local line = io.read(\"l\") or \"\"\nprint(\"Hello from Flux\")\nprint(\"You typed: \" .. line)"
+    },
+    {
+      "id": "dart-3.13",
+      "label": "Dart",
+      "group": "Scripting",
+      "monaco": "dart",
+      "file": "main.dart",
+      "hello": "import 'dart:io';\n\nvoid main() {\n  final line = stdin.readLineSync()?.trim() ?? '';\n  print('Hello from Flux');\n  print('You typed: $line');\n}"
+    },
+    {
+      "id": "groovy-6.0",
+      "label": "Groovy",
+      "group": "Scripting",
+      "monaco": "java",
+      "file": "main.groovy",
+      "hello": "def line = System.in.newReader().readLine()?.trim() ?: ''\nprintln 'Hello from Flux'\nprintln \"You typed: $line\""
+    },
+    {
+      "id": "haskell-9.12",
+      "label": "Haskell",
+      "group": "Functional",
+      "monaco": "plaintext",
+      "file": "main.hs",
+      "hello": "main :: IO ()\nmain = do\n  input <- getContents\n  let line = takeWhile (/= '\\n') input\n  putStrLn \"Hello from Flux\"\n  putStrLn (\"You typed: \" ++ line)"
+    },
+    {
+      "id": "ocaml-5.4",
+      "label": "OCaml",
+      "group": "Functional",
+      "monaco": "plaintext",
+      "file": "main.ml",
+      "hello": "let () =\n  let line = try input_line stdin with End_of_file -> \"\" in\n  print_endline \"Hello from Flux\";\n  print_endline (\"You typed: \" ^ String.trim line)"
+    },
+    {
+      "id": "dotnet-fsharp-10",
+      "label": "F#",
+      "group": "Functional",
+      "monaco": "fsharp",
+      "file": "Program.fs",
+      "hello": "let line = match stdin.ReadLine() with null -> \"\" | s -> s.Trim()\nprintfn \"Hello from Flux\"\nprintfn \"You typed: %s\" line"
+    },
+    {
+      "id": "elixir-1.20",
+      "label": "Elixir",
+      "group": "Functional",
+      "monaco": "elixir",
+      "file": "main.exs",
+      "hello": "line =\n  case IO.gets(\"\") do\n    s when is_binary(s) -> String.trim(s)\n    _ -> \"\"\n  end\n\nIO.puts(\"Hello from Flux\")\nIO.puts(\"You typed: #{line}\")"
+    },
+    {
+      "id": "erlang-29",
+      "label": "Erlang",
+      "group": "Functional",
+      "monaco": "plaintext",
+      "file": "main.erl",
+      "hello": "%% Starts at main/1, as an escript does.\nmain(_) ->\n    Line = case io:get_line(\"\") of\n        eof -> \"\";\n        {error, _} -> \"\";\n        L -> string:trim(L)\n    end,\n    io:format(\"Hello from Flux~n\"),\n    io:format(\"You typed: ~ts~n\", [Line]).",
+      "inputHint": "main/1 always gets an empty list: runs take no command-line arguments."
+    },
+    {
+      "id": "clojure-1.12",
+      "label": "Clojure",
+      "group": "Functional",
+      "monaco": "clojure",
+      "file": "main.clj",
+      "hello": "(require '[clojure.string :as str])\n\n(let [line (str/trim (or (read-line) \"\"))]\n  (println \"Hello from Flux\")\n  (println (str \"You typed: \" line)))"
+    },
+    {
+      "id": "scala-3.10",
+      "label": "Scala",
+      "group": "Functional",
+      "monaco": "scala",
+      "file": "main.scala",
+      "hello": "import scala.io.StdIn\n\n@main def run(): Unit =\n  val line = Option(StdIn.readLine()).getOrElse(\"\").trim\n  println(\"Hello from Flux\")\n  println(s\"You typed: $line\")"
+    },
+    {
+      "id": "sbcl-2.6",
+      "label": "Common Lisp",
+      "group": "Functional",
+      "monaco": "scheme",
+      "file": "main.lisp",
+      "hello": "(let ((line (string-trim '(#\\Space #\\Return) (read-line *standard-input* nil \"\"))))\n  (format t \"Hello from Flux~%\")\n  (format t \"You typed: ~a~%\" line))"
+    },
+    {
+      "id": "racket-9.3",
+      "label": "Racket",
+      "group": "Functional",
+      "monaco": "scheme",
+      "file": "main.rkt",
+      "hello": "#lang racket\n\n(define line (read-line))\n(displayln \"Hello from Flux\")\n(printf \"You typed: ~a\\n\" (if (eof-object? line) \"\" (string-trim line)))"
+    },
+    {
+      "id": "swipl-10",
+      "label": "Prolog",
+      "group": "Functional",
+      "monaco": "plaintext",
+      "file": "main.pl",
+      "hello": ":- initialization(main).\n\nmain :-\n    read_line_to_string(user_input, Line0),\n    ( Line0 == end_of_file -> Line = \"\" ; Line = Line0 ),\n    writeln('Hello from Flux'),\n    format(\"You typed: ~w~n\", [Line]),\n    halt."
+    },
+    {
+      "id": "python-3.14-pandas2",
+      "label": "Python (pandas 2)",
+      "group": "Data",
+      "monaco": "python",
+      "file": "main.py",
+      "hello": "import sys\n\nimport pandas as pd\n\nline = sys.stdin.readline().strip()\nprint(\"Hello from Flux\")\nprint(\"You typed:\", line)\nprint(\"pandas\", pd.__version__)"
+    },
+    {
+      "id": "sqlite-3",
+      "label": "SQL (SQLite)",
+      "group": "Data",
+      "monaco": "sql",
+      "file": "main.sql",
+      "hello": "SELECT 'Hello from Flux';\nSELECT 'You typed: ' || rtrim(coalesce(readfile('input'), ''), char(10, 13));",
+      "inputHint": "The input isn't run as SQL: read it with readfile('input')."
+    },
+    {
+      "id": "duckdb-1.5",
+      "label": "SQL (DuckDB)",
+      "group": "Data",
+      "monaco": "sql",
+      "file": "main.sql",
+      "hello": "SELECT 'Hello from Flux';\nSELECT 'You typed: ' || rtrim(content, chr(10) || chr(13)) FROM read_text('input');",
+      "inputHint": "The input isn't run as SQL: read it with read_text('input')."
+    },
+    {
+      "id": "r-4.6",
+      "label": "R",
+      "group": "Data",
+      "monaco": "r",
+      "file": "main.R",
+      "hello": "line <- readLines(file(\"stdin\"), n = 1, warn = FALSE)\ncat(\"Hello from Flux\\n\")\ncat(\"You typed: \", if (length(line)) trimws(line) else \"\", \"\\n\", sep = \"\")"
+    },
+    {
+      "id": "julia-1.13",
+      "label": "Julia",
+      "group": "Data",
+      "monaco": "julia",
+      "file": "main.jl",
+      "hello": "line = strip(readline())\nprintln(\"Hello from Flux\")\nprintln(\"You typed: \", line)"
+    },
+    {
+      "id": "octave-11",
+      "label": "Octave",
+      "group": "Data",
+      "monaco": "plaintext",
+      "file": "main.m",
+      "hello": "line = fgetl(stdin);\nif ~ischar(line), line = ''; end\ndisp('Hello from Flux')\nprintf('You typed: %s\\n', strtrim(line));"
+    },
+    {
+      "id": "dotnet-vbnet-10",
+      "label": "Visual Basic",
+      "group": "Other",
+      "monaco": "vb",
+      "file": "Program.vb",
+      "hello": "Module Program\n    Sub Main()\n        Dim line As String = If(Console.ReadLine(), \"\").Trim()\n        Console.WriteLine(\"Hello from Flux\")\n        Console.WriteLine(\"You typed: \" & line)\n    End Sub\nEnd Module"
+    },
+    {
+      "id": "gnucobol-3.2",
+      "label": "COBOL",
+      "group": "Other",
+      "monaco": "plaintext",
+      "file": "main.cob",
+      "hello": "IDENTIFICATION DIVISION.\nPROGRAM-ID. MAIN.\nDATA DIVISION.\nWORKING-STORAGE SECTION.\n01 LINE-IN PIC X(80) VALUE SPACES.\nPROCEDURE DIVISION.\n    DISPLAY \"Hello from Flux\"\n    ACCEPT LINE-IN\n    DISPLAY \"You typed: \" FUNCTION TRIM(LINE-IN)\n    STOP RUN."
+    },
+    {
+      "id": "fbc-1.10",
+      "label": "FreeBASIC",
+      "group": "Other",
+      "monaco": "vb",
+      "file": "main.bas",
+      "hello": "Dim As String l\nLine Input l\nPrint \"Hello from Flux\"\nPrint \"You typed: \" & Trim(l)"
+    }
   ],
   "retired": {
     "dotnet-csharp-9": "dotnet-csharp-10",
-    "dotnet-fsharp-9": "dotnet-fsharp-10"
+    "dotnet-fsharp-9": "dotnet-fsharp-10",
+    "dotnet-vbnet-9": "dotnet-vbnet-10"
   }
 }

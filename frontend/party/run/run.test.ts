@@ -262,7 +262,9 @@ describe("compilers", () => {
       assert.ok(localCompilers.ids.has(id), `${id} in the frontend table`);
     }
     assert.strictEqual(resolveCompiler("dotnet-csharp-9"), "dotnet-csharp-10", "an old room's id runs as its successor");
-    assert.strictEqual(resolveCompiler("sqlite-3"), null, "not in the local table yet");
+    assert.strictEqual(resolveCompiler("dotnet-vbnet-9"), "dotnet-vbnet-10");
+    assert.strictEqual(localCompilers.ids.size, 48, "every language, no test packs");
+    assert.ok(![...localCompilers.ids].some(id => id.endsWith("-tests")));
     assert.strictEqual(resolveCompiler("nope"), null);
     assert.strictEqual(resolveCompiler(42), null);
   });

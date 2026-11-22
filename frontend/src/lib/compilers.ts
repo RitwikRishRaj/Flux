@@ -3,13 +3,15 @@ import table from "./compilers.json";
 export interface Compiler {
   id: string;
   label: string;
+  group: string; // picker section: Popular, Systems, Scripting, Functional, Data, Other
   monaco: string;
   file: string;
   hello: string;
+  inputHint?: string; // shown on the Input tab when the language doesn't read input the usual way
 }
 
-// The one compiler table: id (the API's), label, Monaco language, file name and starter code. backend/server.js reads
-// the same JSON as its fallback list of ids when the API's own list (GET /api/compilers/) can't be fetched.
+// The one compiler table: id (the API's), label, picker group, Monaco language, file name and starter code. The Worker
+// reads the same JSON as its fallback list of ids when the API's own list (GET /api/compilers/) can't be fetched.
 export const COMPILERS: Compiler[] = table.compilers;
 
 // Old ids still saved in rooms (e.g. "dotnet-csharp-9") and the id they run as now; mirrors the API's `retired` map.
