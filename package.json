@@ -11,7 +11,7 @@
     "wrangler": "wrangler dev",
     "preview": "next build && wrangler dev",
     "deploy": "next build && wrangler deploy --env production",
-    "postinstall": "bash scripts/patch-y-monaco.sh"
+    "postinstall": "node scripts/patch-y-monaco.mjs"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
