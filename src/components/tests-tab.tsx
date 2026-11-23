@@ -3,7 +3,7 @@
 import { memo, useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { TestResult } from "@/lib/test-results";
-import { Plus, Trash2, Play, Check, X, AlertCircle, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Trash2, Play, Loader2, ChevronRight, CornerDownLeft } from "lucide-react";
 
 export interface TestCase {
   id: string;
@@ -23,6 +23,7 @@ export type TestRunState = {
 
 const MAX_CASES = 32;            // the free plan's tests per run-tests request
 const MAX_FIELD = 10000;
+const EASE = [0.32, 0.72, 0, 1] as const;
 const VERDICT_LABEL: Record<string, string> = {
   accepted: "pass",
   wrong_answer: "wrong answer",
@@ -55,273 +56,161 @@ export const firstDiffLine = (actual: string, expected: string) => {
   return null;
 };
 
-// Memoized test card with local state for smooth remote updates
+type Tone = "pass" | "fail" | "running" | "muted";
+const toneOf = (result: TestResult | undefined, queued: boolean): Tone | null =>
+  queued || result?.status === "running" ? "running"
+  : result?.status === "pass" ? "pass"
+  : result?.status === "fail" || result?.status === "error" ? "fail"
+  : result?.status === "skipped" ? "muted" : null;
+const PILL: Record<Tone, string> = {
+  pass: "bg-[#5FD0A8]/[0.12] text-[#7FE0BD]",
+  fail: "bg-[#FF8A7A]/[0.12] text-[#FFB4A8]",
+  running: "bg-amber-400/[0.12] text-amber-200",
+  muted: "bg-white/[0.06] text-primary/55",
+};
+const DOT: Record<Tone, string> = { pass: "bg-[#5FD0A8]", fail: "bg-[#FF8A7A]", running: "bg-amber-300 animate-pulse", muted: "bg-white/30" };
+
+const firstLine = (s: string) => s.split("\n").find(l => l.trim()) ?? "";
+const FIELD = "block w-full resize-none rounded-lg bg-black/40 px-3 py-2 font-mono text-[12px] leading-[1.6] text-primary/90 outline-none ring-1 ring-inset ring-white/[0.06] transition-[box-shadow,background-color] duration-300 placeholder:text-primary/25 focus:bg-black/60 focus:ring-white/[0.18] [color-scheme:dark] [scrollbar-color:rgba(255,255,255,0.15)_transparent] [scrollbar-width:thin]";
+
+// One test. Edits stay local while typing (caret-safe) and reach the room 150 ms later; remote edits show when not focused.
 const TestCard = memo(function TestCard({
-  tc,
-  index,
-  result,
-  queued,
-  onEdit,
-  onDelete,
+  tc, index, result, queued, focus, onEdit, onDelete, onRunAll,
 }: {
   tc: TestCase;
   index: number;
   result?: TestResult;
   queued: boolean;
+  focus: boolean;            // just added here: put the caret in its input
   onEdit: (id: string, field: "stdin" | "expectedOutput", value: string) => void;
-  onDelete: (id: string) => void;
+  onDelete: (tc: TestCase, index: number) => void;
+  onRunAll: () => void;
 }) {
   const stdinRef = useRef<HTMLTextAreaElement>(null);
   const expectedRef = useRef<HTMLTextAreaElement>(null);
   const [localStdin, setLocalStdin] = useState(tc.stdin);
   const [localExpected, setLocalExpected] = useState(tc.expectedOutput);
-  const editTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [collapsed, setCollapsed] = useState(false);
+  const tone = toneOf(result, queued);
 
-  // Sync remote changes only when not focused
   useEffect(() => {
-    // Only update local state when not focused to preserve caret
-    if (stdinRef.current && document.activeElement !== stdinRef.current && tc.stdin !== localStdin) {
-      setLocalStdin(tc.stdin);
-    }
-    if (expectedRef.current && document.activeElement !== expectedRef.current && tc.expectedOutput !== localExpected) {
-      setLocalExpected(tc.expectedOutput);
-    }
-  }, [tc.stdin, tc.expectedOutput]);
+    if (document.activeElement !== stdinRef.current && tc.stdin !== localStdin) setLocalStdin(tc.stdin);
+    if (document.activeElement !== expectedRef.current && tc.expectedOutput !== localExpected) setLocalExpected(tc.expectedOutput);
+  }, [tc.stdin, tc.expectedOutput]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-grow textareas
+  useEffect(() => { if (focus) { setCollapsed(false); setTimeout(() => stdinRef.current?.focus(), 60); } }, [focus]);
+
+  // Grow with the content, from one line up to ~10.
   useEffect(() => {
-    if (stdinRef.current) {
-      stdinRef.current.style.height = 'auto';
-      stdinRef.current.style.height = Math.min(stdinRef.current.scrollHeight, 250) + 'px';
+    for (const el of [stdinRef.current, expectedRef.current]) {
+      if (!el) continue;
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight + 2, 200) + "px";
     }
-    if (expectedRef.current) {
-      expectedRef.current.style.height = 'auto';
-      expectedRef.current.style.height = Math.min(expectedRef.current.scrollHeight, 250) + 'px';
-    }
-  }, [localStdin, localExpected]);
+  }, [localStdin, localExpected, collapsed]);
 
-  const handleStdinChange = useCallback((value: string) => {
-    setLocalStdin(value);
-    const key = `${tc.id}-stdin`;
-    const existing = editTimeoutRef.current.get(key);
-    if (existing) clearTimeout(existing);
-    const timeout = setTimeout(() => onEdit(tc.id, "stdin", value), 150);
-    editTimeoutRef.current.set(key, timeout);
+  const change = useCallback((field: "stdin" | "expectedOutput", value: string) => {
+    (field === "stdin" ? setLocalStdin : setLocalExpected)(value);
+    const t = timers.current.get(field);
+    if (t) clearTimeout(t);
+    timers.current.set(field, setTimeout(() => onEdit(tc.id, field, value), 150));
   }, [tc.id, onEdit]);
 
-  const handleExpectedChange = useCallback((value: string) => {
-    setLocalExpected(value);
-    const key = `${tc.id}-expectedOutput`;
-    const existing = editTimeoutRef.current.get(key);
-    if (existing) clearTimeout(existing);
-    const timeout = setTimeout(() => onEdit(tc.id, "expectedOutput", value), 150);
-    editTimeoutRef.current.set(key, timeout);
-  }, [tc.id, onEdit]);
-
-  const statusColor = 
-    queued ? "amber" :
-    result?.status === "pass" ? "green" :
-    result?.status === "fail" ? "red" :
-    result?.status === "error" ? "red" : "neutral";
-
-  const statusBgColor = 
-    queued ? "bg-amber-500/15" :
-    result?.status === "pass" ? "bg-emerald-500/15" :
-    result?.status === "fail" ? "bg-red-500/15" :
-    result?.status === "error" ? "bg-red-500/15" : "bg-white/[0.06]";
-
-  const statusBorderColor = 
-    queued ? "border-amber-500/30" :
-    result?.status === "pass" ? "border-emerald-500/30" :
-    result?.status === "fail" ? "border-red-500/30" :
-    result?.status === "error" ? "border-red-500/30" : "border-white/[0.08]";
-
-  const accentColor = 
-    queued ? "#f59e0b" :
-    result?.status === "pass" ? "#10b981" :
-    result?.status === "fail" ? "#ef4444" :
-    result?.status === "error" ? "#ef4444" : "#52525b";
+  // Ctrl+Enter here runs the tests, not the room-wide "run the code" shortcut.
+  const keys = (e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); e.stopPropagation(); onRunAll(); } };
+  const label = tone === "running" ? "running" : result ? VERDICT_LABEL[result.verdict ?? ""] ?? result.status : null;
 
   return (
-    <motion.div
+    <motion.li
+      layout="position"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.98 }}
-      transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
-      className="group relative shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-white/[0.04] to-white/[0.02] ring-1 ring-inset ring-white/[0.06] hover:ring-white/[0.10] transition-all duration-150"
+      exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.15 } }}
+      transition={{ duration: 0.35, ease: EASE }}
+      className="group rounded-xl bg-white/[0.025] p-1 ring-1 ring-inset ring-white/[0.06] transition-[box-shadow] duration-300 focus-within:ring-white/[0.12]"
     >
-      {/* Left accent bar */}
-      <div 
-        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl transition-colors duration-150"
-        style={{ backgroundColor: accentColor, opacity: result || queued ? 1 : 0.3 }}
-      />
-      
-      {/* Collapsed header row */}
-      <div className="flex items-center gap-3 p-3 pl-5">
-        {/* Collapse toggle */}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-primary/40 hover:text-primary hover:bg-white/[0.05] transition-colors"
-          aria-label={collapsed ? "Expand case" : "Collapse case"}
-        >
-          {collapsed ? (
-            <ChevronDown className="h-4 w-4" strokeWidth={1.5} />
-          ) : (
-            <ChevronUp className="h-4 w-4" strokeWidth={1.5} />
-          )}
-        </button>
-
-        {/* Case number */}
-        <div className="flex h-7 min-w-[2rem] items-center justify-center rounded-lg bg-white/[0.06] px-2">
-          <span className="text-[11px] font-mono font-semibold text-primary/70">{index + 1}</span>
-        </div>
-
-        {/* Status chip */}
-        <div className={`${statusBgColor} ${statusBorderColor} border rounded-lg px-2.5 py-1 flex items-center gap-1.5 transition-colors duration-150`}>
-          {queued && (
-            <>
-              <Clock className="h-3 w-3 animate-spin text-amber-400" strokeWidth={2} />
-              <span className="text-[10px] font-mono font-medium text-amber-400">running</span>
-            </>
-          )}
-          {result?.status === "pass" && (
-            <>
-              <Check className="h-3 w-3 text-emerald-400" strokeWidth={2.5} />
-              <span className="text-[10px] font-mono font-medium text-emerald-400">pass</span>
-            </>
-          )}
-          {result?.status === "fail" && (
-            <>
-              <X className="h-3 w-3 text-red-400" strokeWidth={2.5} />
-              <span className="text-[10px] font-mono font-medium text-red-400">{VERDICT_LABEL[result.verdict ?? ""] ?? "fail"}</span>
-            </>
-          )}
-          {result?.status === "error" && (
-            <>
-              <AlertCircle className="h-3 w-3 text-red-400" strokeWidth={2} />
-              <span className="text-[10px] font-mono font-medium text-red-400">{VERDICT_LABEL[result.verdict ?? ""] ?? "error"}</span>
-            </>
-          )}
-          {result?.status === "skipped" && (
-            <span className="text-[10px] font-mono font-medium text-primary/50">skipped</span>
-          )}
-          {!result && !queued && (
-            <span className="text-[10px] font-mono text-primary/40">idle</span>
-          )}
-        </div>
-
-        {/* Duration */}
-        {result?.durationMs !== undefined && (
-          <span className="text-[10px] font-mono text-primary/40 tabular-nums">
-            {result.durationMs}ms
-          </span>
-        )}
-
-        <div className="flex-1" />
-
-        {/* Delete button */}
+      <div className="flex h-9 items-center gap-2 pl-1.5 pr-1">
         <button
           type="button"
-          onClick={() => onDelete(tc.id)}
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-primary/30 hover:text-red-400 hover:bg-red-500/10 focus:outline-none focus:ring-2 focus:ring-red-500/30 transition-colors"
-          aria-label="Delete test case"
+          onClick={() => setCollapsed(c => !c)}
+          aria-expanded={!collapsed}
+          aria-label={`Test ${index + 1}${label ? `, ${label}` : ""}. ${collapsed ? "Expand" : "Collapse"}`}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+        >
+          <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-primary/35 transition-transform duration-300 ${collapsed ? "" : "rotate-90"}`} strokeWidth={1.5} />
+          <span className="shrink-0 font-mono text-[11px] font-medium text-primary/60">Test {index + 1}</span>
+          {label && tone && (
+            <span className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] ${PILL[tone]}`}>{label}</span>
+          )}
+          {result?.durationMs !== undefined && <span className="shrink-0 font-mono text-[10px] tabular-nums text-primary/35">{result.durationMs} ms</span>}
+          {collapsed && (
+            <span className="min-w-0 truncate font-mono text-[11px] text-primary/35">
+              {firstLine(localStdin) || "no input"} <span className="text-primary/20">→</span> {firstLine(localExpected) || "no output"}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(tc, index)}
+          aria-label={`Delete test ${index + 1}`}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-primary/30 outline-none transition-[opacity,color,background-color] duration-300 hover:bg-[#FF8A7A]/10 hover:text-[#FFB4A8] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[#FF8A7A]/30 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
         >
           <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
         </button>
       </div>
 
-      {/* Expandable content */}
       <AnimatePresence initial={false}>
         {!collapsed && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+            transition={{ duration: 0.3, ease: EASE }}
             className="overflow-hidden"
           >
-            <div className="px-3 pb-3 pl-5">
-              {/* Fields - Container query for responsive layout */}
-              <div className="@container">
-                <div className="grid gap-3 @[520px]:grid-cols-2">
-                  {/* Stdin */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono uppercase tracking-wider text-primary/40">stdin</label>
-                    <textarea
-                      ref={stdinRef}
-                      value={localStdin}
-                      onChange={e => handleStdinChange(e.target.value.slice(0, MAX_FIELD))}
-                      spellCheck={false}
-                      rows={3}
-                      placeholder="Input for this test..."
-                      className="w-full resize-none rounded-xl bg-black/40 px-3 py-2.5 font-mono text-[12px] text-primary/90 placeholder:text-primary/20 outline-none ring-1 ring-inset ring-white/[0.06] focus:ring-1 focus:ring-white/[0.20] focus:bg-black/60 transition-all duration-150 overflow-auto"
-                      style={{ 
-                        colorScheme: 'dark',
-                        scrollbarWidth: 'thin',
-                        scrollbarColor: 'rgba(255,255,255,0.15) transparent'
-                      }}
-                    />
-                  </div>
-                  
-                  {/* Expected output */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono uppercase tracking-wider text-primary/40">expected output</label>
-                    <textarea
-                      ref={expectedRef}
-                      value={localExpected}
-                      onChange={e => handleExpectedChange(e.target.value.slice(0, MAX_FIELD))}
-                      spellCheck={false}
-                      rows={3}
-                      placeholder="Expected output..."
-                      className="w-full resize-none rounded-xl bg-black/40 px-3 py-2.5 font-mono text-[12px] text-primary/90 placeholder:text-primary/20 outline-none ring-1 ring-inset ring-white/[0.06] focus:ring-1 focus:ring-white/[0.20] focus:bg-black/60 transition-all duration-150 overflow-auto"
-                      style={{ 
-                        colorScheme: 'dark',
-                        scrollbarWidth: 'thin',
-                        scrollbarColor: 'rgba(255,255,255,0.15) transparent'
-                      }}
-                    />
-                  </div>
-                </div>
+            <div className="px-1.5 pb-1.5">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-primary/35">Input</span>
+                  <textarea ref={stdinRef} value={localStdin} rows={1} spellCheck={false} placeholder="stdin for this test"
+                    onChange={e => change("stdin", e.target.value.slice(0, MAX_FIELD))} onKeyDown={keys} className={FIELD} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.12em] text-primary/35">Expected output</span>
+                  <textarea ref={expectedRef} value={localExpected} rows={1} spellCheck={false} placeholder="what it should print"
+                    onChange={e => change("expectedOutput", e.target.value.slice(0, MAX_FIELD))} onKeyDown={keys} className={FIELD} />
+                </label>
               </div>
 
-              {/* Results */}
               {result?.status === "fail" && result.actual !== undefined && (() => {
                 const line = firstDiffLine(result.actual, tc.expectedOutput);
                 return (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mt-3 rounded-xl bg-red-500/[0.08] ring-1 ring-inset ring-red-500/20 p-3"
-                  >
-                    <div className="mb-1.5 flex items-center justify-between gap-3">
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-red-400/80">actual output</span>
-                      <span className="text-[10px] font-mono text-primary/40">
+                  <div className="mt-2 rounded-lg bg-[#FF8A7A]/[0.06] p-3 ring-1 ring-inset ring-[#FF8A7A]/15">
+                    <div className="mb-1.5 flex items-center justify-between gap-3 font-mono text-[10px]">
+                      <span className="uppercase tracking-[0.12em] text-[#FFB4A8]/80">Actual output</span>
+                      <span className="text-primary/40">
                         {/* The API returns only the first 4,096 characters, so past the cut the line number can't be trusted. */}
                         {result.truncated ? "output cut at 4,096 characters" : line ? `differs at line ${line}` : null}
                       </span>
                     </div>
-                    <pre className="whitespace-pre-wrap font-mono text-[11px] text-primary/80 leading-relaxed">{result.actual}</pre>
-                  </motion.div>
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-primary/80">{result.actual}</pre>
+                  </div>
                 );
               })()}
               {(result?.status === "error" || result?.status === "skipped") && (result.stderr || VERDICT_HINT[result.verdict ?? ""]) && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`mt-3 rounded-xl p-3 ring-1 ring-inset ${result.status === "skipped" ? "bg-white/[0.03] ring-white/[0.08]" : "bg-red-500/[0.08] ring-red-500/20"}`}
-                >
-                  <div className={`mb-1.5 text-[10px] font-mono uppercase tracking-wider ${result.status === "skipped" ? "text-primary/50" : "text-red-400/80"}`}>
+                <div className={`mt-2 rounded-lg p-3 ring-1 ring-inset ${result.status === "skipped" ? "bg-white/[0.03] ring-white/[0.08]" : "bg-[#FF8A7A]/[0.06] ring-[#FF8A7A]/15"}`}>
+                  <div className={`mb-1.5 font-mono text-[10px] uppercase tracking-[0.12em] ${result.status === "skipped" ? "text-primary/50" : "text-[#FFB4A8]/80"}`}>
                     {VERDICT_LABEL[result.verdict ?? ""] ?? "error"}
                   </div>
-                  <pre className="whitespace-pre-wrap font-mono text-[11px] text-primary/80 leading-relaxed">{result.stderr || VERDICT_HINT[result.verdict ?? ""]}</pre>
-                </motion.div>
+                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-primary/80">{result.stderr || VERDICT_HINT[result.verdict ?? ""]}</pre>
+                </div>
               )}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </motion.li>
   );
 });
 
@@ -330,6 +219,8 @@ export function TestsTab({
   onAdd,
   onEdit,
   onDelete,
+  onRestore,
+  onSaveRun,
   onRunAll,
   testRun,
   runningBy,
@@ -339,128 +230,102 @@ export function TestsTab({
   onAdd: () => void;
   onEdit: (id: string, field: "stdin" | "expectedOutput", value: string) => void;
   onDelete: (id: string) => void;
+  onRestore: (tc: TestCase, index: number) => void; // undo a delete
+  onSaveRun: (() => void) | null;     // add the last run's input and output as a test; null when there's no clean run
   onRunAll: () => void;               // asks the room to run them; the room runs the batches and shares the results
   testRun: TestRunState | null;
   runningBy: string | null;           // whoever has a run going in the room (code or tests), from the shared doc
   runNote: string | null;             // e.g. "The run queue is busy, retrying…", or that a request couldn't be sent
 }) {
   const busy = !!runningBy;
-  const runAll = () => { if (!busy && tests.length > 0) onRunAll(); };
+  const full = tests.length >= MAX_CASES;
+  const runAll = useCallback(() => { if (!busy && tests.length > 0) onRunAll(); }, [busy, tests.length, onRunAll]);
 
-  const results = testRun?.results || new Map();
-  const passed = Array.from(results.values()).filter(r => r.status === "pass").length;
-  const failed = Array.from(results.values()).filter(r => r.status === "fail" || r.status === "error").length;
-  const running = Array.from(results.values()).filter(r => r.status === "running").length;
-  const total = tests.length;
-  const passPercent = total > 0 ? (passed / total) * 100 : 0;
-  const failPercent = total > 0 ? (failed / total) * 100 : 0;
-  const runningPercent = total > 0 ? (running / total) * 100 : 0;
+  // The newest test gets the caret when it was added from this tab (not when someone else adds one).
+  const [focusNext, setFocusNext] = useState(false);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const prevCount = useRef(tests.length);
+  useEffect(() => {
+    if (focusNext && tests.length > prevCount.current) { setFocusId(tests[tests.length - 1].id); setFocusNext(false); }
+    prevCount.current = tests.length;
+  }, [tests, focusNext]);
+  const add = (fn: () => void) => { if (full) return; setFocusNext(true); fn(); };
+
+  // A delete is shared with the whole room at once, so it can be undone for a few seconds.
+  const [deleted, setDeleted] = useState<{ tc: TestCase; index: number } | null>(null);
+  useEffect(() => { if (!deleted) return; const t = setTimeout(() => setDeleted(null), 6000); return () => clearTimeout(t); }, [deleted]);
+  const remove = useCallback((tc: TestCase, index: number) => { setDeleted({ tc, index }); onDelete(tc.id); }, [onDelete]);
+
+  const results = testRun?.results || new Map<string, TestResult>();
+  const passed = tests.filter(tc => results.get(tc.id)?.status === "pass").length;
+  const queuedOf = (id: string) => !!(testRun && !testRun.finishedAt && !testRun.results.has(id));
+  const anyResult = tests.some(tc => results.has(tc.id) || queuedOf(tc.id));
+
+  const addRow = (
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={() => add(onAdd)}
+        disabled={full}
+        className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-white/[0.12] text-[12px] font-medium text-primary/60 outline-none transition-[background-color,color,border-color] duration-300 hover:border-white/[0.2] hover:bg-white/[0.03] hover:text-primary focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+        {full ? `${MAX_CASES} tests, the most per run` : "Add test"}
+      </button>
+      {onSaveRun && !full && (
+        <button
+          type="button"
+          onClick={() => add(onSaveRun)}
+          title="A new test with the Input tab as its input and the last run's output as expected"
+          className="flex h-9 items-center gap-2 rounded-xl px-3 text-[12px] font-medium text-primary/55 outline-none ring-1 ring-inset ring-white/[0.08] transition-[background-color,color] duration-300 hover:bg-white/[0.04] hover:text-primary focus-visible:ring-2 focus-visible:ring-white/20"
+        >
+          <CornerDownLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
+          Save last run as test
+        </button>
+      )}
+    </div>
+  );
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      {/* Compact header */}
+    <div className="flex h-full flex-col gap-3">
       <div className="flex flex-col gap-2">
-        {/* Main row */}
-        <div className="flex items-center justify-between gap-3">
-          {/* Left: Progress bar and stats */}
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            {/* Progress bar */}
-            <div className="relative h-1.5 flex-1 max-w-[200px] rounded-full bg-white/[0.06] overflow-hidden">
-              {/* Running segment */}
-              {runningPercent > 0 && (
-                <div 
-                  className="absolute top-0 bottom-0 bg-amber-500/60 transition-all duration-150"
-                  style={{ left: `${passPercent}%`, width: `${runningPercent}%` }}
-                />
-              )}
-              {/* Passed segment */}
-              {passPercent > 0 && (
-                <div 
-                  className="absolute top-0 bottom-0 left-0 bg-emerald-500/70 transition-all duration-150"
-                  style={{ width: `${passPercent}%` }}
-                />
-              )}
-              {/* Failed segment */}
-              {failPercent > 0 && (
-                <div 
-                  className="absolute top-0 bottom-0 bg-red-500/70 transition-all duration-150"
-                  style={{ left: `${passPercent + runningPercent}%`, width: `${failPercent}%` }}
-                />
-              )}
-            </div>
-            
-            {/* Stats */}
-            <div className="flex items-center gap-2 whitespace-nowrap text-[11px] font-mono">
-              <span className="text-primary/70">{passed} / {total} passed</span>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <span className="whitespace-nowrap font-mono text-[11px] text-primary/70">
+              {!tests.length ? "" : anyResult ? `${passed} of ${tests.length} passed` : `${tests.length} test${tests.length === 1 ? "" : "s"}`}
+            </span>
+            {anyResult && (
+              <span className="flex min-w-0 flex-wrap items-center gap-1" aria-hidden>
+                {tests.map((tc, i) => {
+                  const tone = toneOf(results.get(tc.id), queuedOf(tc.id));
+                  return <span key={tc.id} title={`Test ${i + 1}`} className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${tone ? DOT[tone] : "bg-white/15"}`} />;
+                })}
+              </span>
+            )}
           </div>
-
-          {/* Right: Action buttons */}
-          <div className="flex items-center gap-2">
+          {tests.length > 0 && (
             <button
               type="button"
-              onClick={onAdd}
-              disabled={tests.length >= MAX_CASES}
-              className="flex h-8 items-center gap-2 rounded-lg bg-white/[0.06] px-3 text-[11px] font-medium text-primary/70 outline-none ring-1 ring-inset ring-white/[0.08] transition-all duration-150 hover:bg-white/[0.1] hover:text-primary hover:ring-white/[0.15] focus:ring-2 focus:ring-white/[0.20] disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              onClick={runAll}
+              disabled={busy}
+              title="Run all tests (Ctrl+Enter in a test)"
+              className="group inline-flex h-8 shrink-0 items-center gap-2 rounded-full bg-primary pl-3.5 pr-1 text-[12px] font-semibold text-black outline-none transition-transform duration-300 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-              <span>Add</span>
+              {busy ? "Running" : "Run all"}
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-black transition-transform duration-500 group-hover:scale-105">
+                {busy ? <Loader2 className="h-3 w-3 animate-spin text-primary" strokeWidth={1.5} /> : <Play className="h-3 w-3 fill-primary text-primary" strokeWidth={1.5} />}
+              </span>
             </button>
-            {tests.length > 0 && (
-              <button
-                type="button"
-                onClick={runAll}
-                disabled={busy}
-                className="flex h-8 items-center gap-2 rounded-lg bg-[#5FD0A8] px-3.5 text-[11px] font-semibold text-black shadow-lg shadow-[#5FD0A8]/15 outline-none ring-1 ring-inset ring-white/20 transition-all duration-150 hover:shadow-xl hover:shadow-[#5FD0A8]/20 active:scale-[0.97] focus:ring-2 focus:ring-white/30 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-              >
-                {busy ? (
-                  <>
-                    <Clock className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
-                    <span>Running…</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-3.5 w-3.5" strokeWidth={2} />
-                    <span>Run all</span>
-                  </>
-                )}
-              </button>
-            )}
-          </div>
+          )}
         </div>
 
-        {/* Secondary row: Run metadata */}
         {testRun && (
-          <div 
-            className="text-[10px] font-mono text-primary/40 truncate"
-            title={`Run by ${testRun.runBy}${testRun.finishedAt ? ` · ${new Date(testRun.startedAt).toLocaleTimeString()}` : ""}${testRun.interrupted ? " · interrupted" : ""}`}
-          >
-            <span className="text-primary/60">Run by</span>{" "}
-            <span className="text-primary/80">{testRun.runBy}</span>
-            {testRun.finishedAt && (
-              <>
-                <span className="text-primary/30 mx-1">·</span>
-                <span>{new Date(testRun.startedAt).toLocaleTimeString()}</span>
-              </>
-            )}
-            {testRun.batchCount > 1 && (
-              <>
-                <span className="text-primary/30 mx-1">·</span>
-                <span>{testRun.finishedAt ? `${testRun.batchCount} batches` : `batch ${testRun.batchIndex}/${testRun.batchCount}`}</span>
-              </>
-            )}
-            {testRun.timeLimit !== null && (
-              <>
-                <span className="text-primary/30 mx-1">·</span>
-                <span>{testRun.timeLimit} s per test</span>
-              </>
-            )}
-            {testRun.interrupted && (
-              <>
-                <span className="text-primary/30 mx-1">·</span>
-                <span className="text-red-400">interrupted</span>
-              </>
-            )}
+          <div className="truncate font-mono text-[10px] text-primary/40" title={`Run by ${testRun.runBy}`}>
+            Run by <span className="text-primary/70">{testRun.runBy}</span>
+            {testRun.finishedAt && <> · {new Date(testRun.startedAt).toLocaleTimeString()}</>}
+            {testRun.batchCount > 1 && <> · {testRun.finishedAt ? `${testRun.batchCount} batches` : `batch ${testRun.batchIndex}/${testRun.batchCount}`}</>}
+            {testRun.timeLimit !== null && <> · {testRun.timeLimit} s per test</>}
+            {testRun.interrupted && <> · <span className="text-[#FFB4A8]">interrupted</span></>}
           </div>
         )}
 
@@ -469,12 +334,8 @@ export function TestsTab({
             Only the first {MAX_CASES} tests run. That&apos;s the free plan&apos;s limit per run.
           </p>
         )}
-        {runNote && (
-          <p className="rounded-lg bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200/90">{runNote}</p>
-        )}
-        {testRun?.error && (
-          <p role="alert" className="rounded-lg bg-red-500/[0.08] px-3 py-2 text-[11px] text-red-300">{testRun.error}</p>
-        )}
+        {runNote && <p className="rounded-lg bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200/90">{runNote}</p>}
+        {testRun?.error && <p role="alert" className="rounded-lg bg-[#FF8A7A]/[0.08] px-3 py-2 text-[11px] text-[#FFB4A8]">{testRun.error}</p>}
         {/* Any skipped test, not just an "incomplete" verdict: with batches, a failure in one batch decides the verdict
             while another batch may still have tests that never started. */}
         {Array.from(results.values()).some(r => r.verdict === "skipped") && (
@@ -483,51 +344,65 @@ export function TestsTab({
           </p>
         )}
         {testRun?.compileError && (
-          <div className="rounded-xl bg-red-500/[0.08] p-3 ring-1 ring-inset ring-red-500/20">
-            <div className="mb-1.5 text-[10px] font-mono uppercase tracking-wider text-red-400/80">didn&apos;t compile</div>
+          <div className="rounded-lg bg-[#FF8A7A]/[0.06] p-3 ring-1 ring-inset ring-[#FF8A7A]/15">
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[#FFB4A8]/80">Didn&apos;t compile</div>
             <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-primary/80">{testRun.compileError}</pre>
           </div>
         )}
       </div>
 
-      {/* Test cases list */}
       {tests.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex flex-1 flex-col items-center justify-center gap-3 py-8"
-        >
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] text-primary/30">
-            <Play className="h-6 w-6" strokeWidth={1.5} />
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: EASE }} className="flex flex-1 flex-col justify-center gap-4 py-6">
+          <div className="text-center">
+            <p className="text-sm text-primary/70">Check the program against expected output</p>
+            <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-primary/40">
+              Each test gives the program an input and compares what it prints. Everyone in the room sees the results.
+            </p>
           </div>
-          <div className="text-center max-w-xs">
-            <p className="text-sm text-primary/60 mb-1">No test cases yet</p>
-            <p className="text-xs text-primary/40 mb-3">Add one to check your program against expected output.</p>
-            <button
-              type="button"
-              onClick={onAdd}
-              className="inline-flex items-center gap-2 text-xs text-[#5FD0A8] hover:text-[#5FD0A8]/80 transition-colors"
-            >
-              <Plus className="h-3 w-3" strokeWidth={1.5} />
-              Add test case
-            </button>
-          </div>
+          {addRow}
         </motion.div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto pr-1 -mr-1">
-          {tests.map((tc, index) => (
-            <TestCard
-              key={tc.id}
-              tc={tc}
-              index={index}
-              result={results.get(tc.id)}
-              queued={!!(testRun && !testRun.finishedAt && !testRun.results.has(tc.id))}
-              onEdit={onEdit}
-              onDelete={onDelete}
-            />
-          ))}
-        </div>
+        <ul className="-mr-1 flex min-h-0 flex-1 flex-col gap-2 overflow-auto pr-1 [scrollbar-color:rgba(255,255,255,0.15)_transparent] [scrollbar-width:thin]">
+          <AnimatePresence initial={false}>
+            {tests.map((tc, index) => (
+              <TestCard
+                key={tc.id}
+                tc={tc}
+                index={index}
+                result={results.get(tc.id)}
+                queued={queuedOf(tc.id)}
+                focus={tc.id === focusId}
+                onEdit={onEdit}
+                onDelete={remove}
+                onRunAll={runAll}
+              />
+            ))}
+          </AnimatePresence>
+          <li className="pt-1">{addRow}</li>
+        </ul>
       )}
+
+      <AnimatePresence>
+        {deleted && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.3, ease: EASE }}
+            role="status"
+            className="flex shrink-0 items-center justify-between gap-3 rounded-xl bg-white/[0.05] py-1.5 pl-3.5 pr-1.5 text-[12px] text-primary/70 ring-1 ring-inset ring-white/[0.08]"
+          >
+            Test {deleted.index + 1} deleted
+            <button
+              type="button"
+              onClick={() => { onRestore(deleted.tc, deleted.index); setDeleted(null); }}
+              className="h-7 rounded-lg px-3 font-medium text-primary outline-none transition-colors duration-300 hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-white/20"
+            >
+              Undo
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

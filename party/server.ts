@@ -6,6 +6,7 @@ import { limiterFor } from "./limiter";
 import { runCode, runTests, type JobDeps, type JobError, type TestCaseJob } from "./run/jobs";
 import { checkCode, checkTests } from "./run/validate";
 import { MAX_TESTS } from "./run/limits";
+import { runImages } from "./run/images";
 import { fetchUsage, postUpstream } from "./run/upstream";
 import type { CompilerList } from "./run/compilers";
 import { isAllowedOrigin } from "./run/origin";
@@ -152,6 +153,7 @@ export class FluxRoom extends YServer<Env> {
     const error: JobError | null = outcome.ok ? null : outcome.error;
     const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
     const num = (v: unknown) => (typeof v === "number" ? v : null);
+    const { images, skipped } = runImages(data.files);
     // Fields as the output panel reads them (docs/run-code); a failed run clears the output and says why.
     this.document.transact(() => {
       lastRun.set("stdout", str(data.output, 50000));
@@ -170,6 +172,8 @@ export class FluxRoom extends YServer<Env> {
       lastRun.set("errorCode", error?.code ?? null);
       lastRun.set("error", error?.error ?? null);
       lastRun.set("resetsAt", error?.resets_at ?? null);
+      lastRun.set("images", images);
+      lastRun.set("imagesCut", skipped > 0 || data.files_truncated === true);
     });
   }
 

@@ -10,6 +10,7 @@ import { STATUS_TTL_MS, summarizeStatus, TtlCache } from "./status";
 import { BusyError, SlotPool } from "./slots";
 import { isAllowedOrigin } from "./origin";
 import { verifyTurnstile } from "./turnstile";
+import { MAX_IMAGE_CHARS, runImages } from "./images";
 import { idleAction, parseIdleMinutes } from "./idle";
 
 const result = (status: number, body: unknown): UpstreamResult =>
@@ -310,5 +311,31 @@ describe("status", () => {
     await assert.rejects(flaky.get());
     fail = false;
     assert.strictEqual((await flaky.get()).service, "ok", "a failed load isn't cached");
+  });
+});
+
+describe("runImages", () => {
+  test("keeps PNG and SVG charts as data: URLs, skips other files and bad data", () => {
+    const { images, skipped } = runImages([
+      { name: "figure-1.png", content_base64: "iVBORw0KGgo=" },
+      { name: "plot.SVG", content_base64: "PHN2Zy8+" },
+      { name: "data.csv", content_base64: "YSxi" },
+      { name: "x.png", content_base64: "not base64!" },
+      { name: "x.png" },
+      null,
+    ]);
+    assert.deepStrictEqual(images, [
+      { name: "figure-1.png", src: "data:image/png;base64,iVBORw0KGgo=" },
+      { name: "plot.SVG", src: "data:image/svg+xml;base64,PHN2Zy8+" },
+    ]);
+    assert.strictEqual(skipped, 0);
+    assert.deepStrictEqual(runImages(undefined), { images: [], skipped: 0 });
+  });
+  test("caps the count and the total size, counting what it leaves out", () => {
+    const six = Array.from({ length: 6 }, (_, i) => ({ name: `f${i}.png`, content_base64: "AAAA" }));
+    assert.deepStrictEqual([runImages(six).images.length, runImages(six).skipped], [4, 2]);
+    const big = "A".repeat(MAX_IMAGE_CHARS - 4);
+    const r = runImages([{ name: "a.png", content_base64: big }, { name: "b.png", content_base64: "AAAAAAAA" }, { name: "c.png", content_base64: "AAAA" }]);
+    assert.deepStrictEqual([r.images.map(i => i.name), r.skipped], [["a.png", "c.png"], 1]);
   });
 });

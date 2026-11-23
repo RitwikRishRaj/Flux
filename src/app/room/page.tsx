@@ -12,6 +12,8 @@ export default function Room() {
     const id = decodeURIComponent(location.pathname.split("/")[2] ?? "");
     if (!id) { location.replace("/"); return; }
     const q = new URLSearchParams(location.search);
+    // A shared link has no name: join from the landing page, which asks for a name and colour (remembered after the first time).
+    if (!q.get("name")) { location.replace(`/?join=${encodeURIComponent(id)}${q.get("mode") === "web" ? "&mode=web" : ""}`); return; }
     setRoom({
       id,
       mode: q.get("mode") === "web" ? "web" : "code",

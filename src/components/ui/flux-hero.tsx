@@ -137,7 +137,7 @@ const FluxHero = () => {
         <div className="absolute inset-x-4 top-4 z-10 mx-auto max-w-[420px] sm:top-6 lg:inset-x-auto lg:right-10 lg:top-1/2 lg:mx-0 lg:w-[420px] lg:-translate-y-1/2">
           <RoomPanel
             onEnter={({ room, user }) =>
-              router.push(`/room/${room}?name=${encodeURIComponent(user.name)}&color=${encodeURIComponent(user.color)}&id=${encodeURIComponent(user.id)}`)
+              router.push(`/room/${room}?name=${encodeURIComponent(user.name)}&color=${encodeURIComponent(user.color)}&id=${encodeURIComponent(user.id)}${new URLSearchParams(location.search).get("mode") === "web" ? "&mode=web" : ""}`)
             }
           />
         </div>

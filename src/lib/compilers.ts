@@ -3,6 +3,7 @@ import table from "./compilers.json";
 export interface Compiler {
   id: string;
   label: string;
+  version: string; // as onlinecompiler.io/languages lists it, e.g. "3.14", "GCC 15"
   group: string; // picker section: Popular, Systems, Scripting, Functional, Data, Other
   monaco: string;
   file: string;

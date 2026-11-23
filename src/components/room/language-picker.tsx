@@ -4,8 +4,8 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, Search } from "lucide-react";
 import { COMPILERS, type Compiler, type CompilerId } from "@/lib/compilers";
 
-// Matches label or id ("cpp" won't find C++, but "c++" and "g++" do).
-const matches = (c: Compiler, q: string) => !q || c.label.toLowerCase().includes(q) || c.id.includes(q);
+// Matches label, version or id ("node" finds JavaScript; "cpp" won't find C++, but "c++" and "g++" do).
+const matches = (c: Compiler, q: string) => !q || c.label.toLowerCase().includes(q) || c.version.toLowerCase().includes(q) || c.id.includes(q);
 
 // A combobox (ARIA 1.2 pattern): focus stays in the search box, arrows move the active option, Enter picks it.
 export function LanguagePicker({ value, onChange }: { value: CompilerId; onChange: (id: CompilerId) => void }) {
@@ -52,12 +52,13 @@ export function LanguagePicker({ value, onChange }: { value: CompilerId; onChang
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Language: ${current.label}`}
+        aria-label={`Language: ${current.label} ${current.version}`}
         onClick={() => (open ? close() : show())}
         onKeyDown={e => { if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); show(); } }}
         className="flex h-9 items-center gap-1.5 rounded-full pl-3 pr-2 sm:pl-4 sm:pr-2.5 text-sm font-medium text-primary outline-none transition-colors hover:bg-white/[0.06] focus-visible:bg-white/[0.06]"
       >
         {current.label}
+        <span className="hidden font-normal text-primary/45 md:inline">{current.version}</span>
         <ChevronDown className={`h-4 w-4 text-primary/50 transition-transform duration-300 ${open ? "rotate-180" : ""}`} strokeWidth={1.5} />
       </button>
 
@@ -100,7 +101,10 @@ export function LanguagePicker({ value, onChange }: { value: CompilerId; onChang
                     className={`flex h-9 cursor-pointer items-center justify-between rounded-xl px-2.5 text-sm ${i === active ? "bg-white/[0.07] text-primary" : "text-primary/75"}`}
                   >
                     <span>{c.label}</span>
-                    {c.id === value && <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />}
+                    <span className="ml-auto flex items-center gap-2 pl-3 text-[12px] text-primary/40">
+                      {c.version}
+                      <span className={`h-1.5 w-1.5 rounded-full ${c.id === value ? "bg-primary" : ""}`} aria-hidden />
+                    </span>
                   </div>
                 ))}
               </div>

@@ -7,7 +7,7 @@ A real-time collaborative code editor with in-browser execution.
 ### 1. Worker (live editing and code execution)
 
 ```bash
-cd frontend
+# from the repo root
 cp .env.example .env.local
 # put your onlinecompiler.io API key in .dev.vars (gitignored):
 echo ONLINECOMPILER_API_KEY=your-key > .dev.vars
@@ -21,7 +21,7 @@ Runs on `http://127.0.0.1:8787`. The room Durable Objects sync the editor and ru
 In a second terminal:
 
 ```bash
-cd frontend
+# from the repo root
 npm run dev
 ```
 
@@ -30,8 +30,7 @@ Opens at `http://localhost:3000`.
 ## Project structure
 
 ```
-Flux/
-└── frontend/          # Next.js 15 app + the Cloudflare Worker
+Flux/                  # Next.js 15 app + the Cloudflare Worker
     ├── party/
     │   ├── server.ts                    # Worker entry, FluxRoom Durable Object (sync + runs code)
     │   ├── limiter.ts                   # Limiter Durable Object (slot cap, daily budget, caches)
@@ -74,6 +73,6 @@ Get one at https://api.onlinecompiler.io:
 1. Sign up
 2. Navigate to **API Keys**
 3. Create a key (REST API type)
-4. Put it in `frontend/.dev.vars` as `ONLINECOMPILER_API_KEY=...` (production: `npx wrangler secret put ONLINECOMPILER_API_KEY`)
+4. Put it in `.dev.vars` as `ONLINECOMPILER_API_KEY=...` (production: `npx wrangler secret put ONLINECOMPILER_API_KEY`)
 
 Free tier handles reasonable usage. For high throughput, consider self-hosting Piston.

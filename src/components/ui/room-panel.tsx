@@ -69,6 +69,9 @@ export function RoomPanel({ onEnter }: { onEnter: (entry: RoomEntry) => void }) 
     } catch {
       // localStorage blocked: use in-memory fallback
     }
+    // Arrived from a shared link (/?join=<id>): open Join with the room filled in; the name field is next.
+    const join = parseId(new URLSearchParams(location.search).get("join") ?? "");
+    if (ID_RE.test(join)) { setMode("join"); setJoinInput(join); setTimeout(() => nameRef.current?.focus(), 80); }
     // SVG backdrop filters only work in Chromium; others get plain frosted glass.
     setLens(/Chrome\//.test(navigator.userAgent) && !/OPR\//.test(navigator.userAgent));
   }, []);

@@ -38,6 +38,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
     stdout: string; stderr: string; status: string; runBy: string; runById: string; finishedAt: number;
     exitCode: number | null; signal: number | null; time: string; memory: string; truncated: boolean; timeLimit: number | null; memoryLimit: number | null;
     errorCode: string | null; error: string; resetsAt: string | null; // a run the room couldn't do (busy, budget, ...)
+    images: { name: string; src: string }[]; imagesCut: boolean; // charts (plt.show(), files in $OUTPUT_DIR)
   } | null>(null);
   const [testRun, setTestRun] = useState<TestRunState | null>(null);
   // The room's run in progress (code or tests), from the shared doc: the room runs it, so it ends even if its starter leaves.
@@ -137,7 +138,8 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
 
   const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(location.href);
+      // The room's address only: the sharer's ?name, colour and id stay out, so whoever opens it picks their own.
+      await navigator.clipboard.writeText(`${location.origin}/room/${encodeURIComponent(id)}${mode === "web" ? "?mode=web" : ""}`);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch { /* blocked */ }
@@ -176,9 +178,15 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
     }
   }, [tab]);
 
-  const addTest = () => {
+  const addTest = (init?: { stdin: string; expectedOutput: string }) => {
     if (!testsRef.current) return;
-    testsRef.current.push([{ id: crypto.randomUUID(), stdin: "", expectedOutput: "" }]);
+    testsRef.current.push([{ id: crypto.randomUUID(), stdin: init?.stdin ?? "", expectedOutput: init?.expectedOutput ?? "" }]);
+  };
+  // Undo for a delete: back where it was, unless someone already put it back.
+  const restoreTest = (tc: TestCase, index: number) => {
+    const arr = testsRef.current;
+    if (!arr || arr.toArray().some(t => t.id === tc.id)) return;
+    arr.insert(Math.min(index, arr.length), [{ id: tc.id, stdin: tc.stdin, expectedOutput: tc.expectedOutput }]);
   };
 
   const editTest = (id: string, field: "stdin" | "expectedOutput", value: string) => {
@@ -230,7 +238,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
         <a href="/" aria-label="Back" className="hidden h-9 w-9 shrink-0 items-center sm:flex justify-center rounded-full text-primary/60 transition-colors duration-300 hover:bg-white/[0.06] hover:text-primary active:scale-95">
           <ArrowLeft className="h-[18px] w-[18px]" strokeWidth={1.5} />
         </a>
-        <span className="hidden font-mono text-[13px] text-primary/50 sm:block">/{id}</span>
+        <span className="hidden font-mono text-[13px] text-primary/50 md:block">/{id}</span>
 
         <div role="tablist" aria-label="Mode" className="relative z-0 flex shrink-0 sm:ml-1 h-9 items-center rounded-full bg-white/[0.04] p-0.5">
           {(["code", "web"] as const).map(m => (
@@ -425,6 +433,12 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                           errorCode: typeof lr.get("errorCode") === "string" ? String(lr.get("errorCode")) : null,
                           error: typeof lr.get("error") === "string" ? String(lr.get("error")).slice(0, 500) : "",
                           resetsAt: typeof lr.get("resetsAt") === "string" ? String(lr.get("resetsAt")) : null,
+                          // Only image data: URLs reach <img src>, whoever wrote the doc.
+                          images: (Array.isArray(lr.get("images")) ? lr.get("images") : [])
+                            .filter((i: any) => typeof i?.src === "string" && /^data:image\/(png|svg\+xml);base64,/.test(i.src))
+                            .slice(0, 4)
+                            .map((i: any) => ({ name: String(i.name ?? "").slice(0, 100), src: i.src })),
+                          imagesCut: lr.get("imagesCut") === true,
                         });
                       }
                     };
@@ -522,7 +536,7 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
           </div>
         </div>
 
-        <aside className="flex min-h-0 flex-col lg:w-[400px] xl:w-[440px]">
+        <aside className="flex min-h-0 flex-col max-lg:h-[45%] lg:w-[400px] xl:w-[440px]">
           <div className="flex min-h-0 flex-1 flex-col rounded-[1.6rem] bg-white/[0.03] ring-1 ring-inset ring-white/[0.08]">
             <div className="flex h-12 shrink-0 items-end gap-1 px-2">
               {tabs.map(t => {
@@ -568,9 +582,16 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                       <p className="mb-2 shrink-0 font-mono text-[11px] text-primary/40">
                         Run by {lastRun.runBy || "Anonymous"} · {new Date(lastRun.finishedAt).toLocaleTimeString()}
                       </p>
-                      <pre className={`min-h-0 flex-1 overflow-auto font-mono text-[13px] leading-relaxed ${lastRun.status !== "ok" ? "text-[#FFC9A8]" : "text-primary/90"}`}>
-                        {lastRun.stdout}{lastRun.stderr ? "\n" + lastRun.stderr : ""}
-                      </pre>
+                      <div className="min-h-0 flex-1 overflow-auto">
+                        <pre className={`font-mono text-[13px] leading-relaxed ${lastRun.status !== "ok" ? "text-[#FFC9A8]" : "text-primary/90"}`}>
+                          {lastRun.stdout}{lastRun.stderr ? "\n" + lastRun.stderr : ""}
+                        </pre>
+                        {lastRun.images.map((img, i) => (
+                          // eslint-disable-next-line @next/next/no-img-element -- a data: URL from the run, nothing to optimise
+                          <img key={i} src={img.src} alt={`Chart ${i + 1} (${img.name})`} className="mt-3 block h-auto max-w-full rounded-xl bg-white" />
+                        ))}
+                        {lastRun.imagesCut && <p className="mt-2 font-mono text-[11px] text-[#FFC9A8]">Some charts were too large to show.</p>}
+                      </div>
                       {lastRun.exitCode !== null && (() => {
                         const time = formatSeconds(lastRun.time);
                         const memory = formatMemory(lastRun.memory);
@@ -642,9 +663,14 @@ export function FluxRoom({ id, user, initialMode }: { id: string; user: RoomUser
                 <motion.div key="tests" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }} className="flex h-full min-h-[12rem] flex-col rounded-2xl bg-[#0B0B0A] p-4">
                   <TestsTab
                     tests={tests}
-                    onAdd={addTest}
+                    onAdd={() => addTest()}
                     onEdit={editTest}
                     onDelete={deleteTest}
+                    onRestore={restoreTest}
+                    // The last run's input and output as a new test: run once, then keep that output as the expected one.
+                    onSaveRun={lastRun && lastRun.status === "ok" && !lastRun.errorCode
+                      ? () => addTest({ stdin: stdinRef.current?.toString() ?? "", expectedOutput: lastRun.stdout })
+                      : null}
                     onRunAll={runAllTests}
                     testRun={testRun}
                     runningBy={runningBy}

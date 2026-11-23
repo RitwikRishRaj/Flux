@@ -3,6 +3,7 @@
     {
       "id": "python-3.14",
       "label": "Python",
+      "version": "3.14",
       "group": "Popular",
       "monaco": "python",
       "file": "main.py",
@@ -11,6 +12,7 @@
     {
       "id": "nodejs-24",
       "label": "JavaScript",
+      "version": "Node.js 24",
       "group": "Popular",
       "monaco": "javascript",
       "file": "main.js",
@@ -19,6 +21,7 @@
     {
       "id": "typescript-deno",
       "label": "TypeScript",
+      "version": "Deno",
       "group": "Popular",
       "monaco": "typescript",
       "file": "main.ts",
@@ -28,6 +31,7 @@
     {
       "id": "openjdk-25",
       "label": "Java",
+      "version": "OpenJDK 25",
       "group": "Popular",
       "monaco": "java",
       "file": "Main.java",
@@ -36,6 +40,7 @@
     {
       "id": "g++-15",
       "label": "C++",
+      "version": "G++ 15",
       "group": "Popular",
       "monaco": "cpp",
       "file": "main.cpp",
@@ -44,6 +49,7 @@
     {
       "id": "g++-15-cpp20",
       "label": "C++20",
+      "version": "G++ 15",
       "group": "Popular",
       "monaco": "cpp",
       "file": "main.cpp",
@@ -52,6 +58,7 @@
     {
       "id": "gcc-15",
       "label": "C",
+      "version": "GCC 15",
       "group": "Popular",
       "monaco": "c",
       "file": "main.c",
@@ -60,6 +67,7 @@
     {
       "id": "dotnet-csharp-10",
       "label": "C#",
+      "version": ".NET SDK 10",
       "group": "Popular",
       "monaco": "csharp",
       "file": "Program.cs",
@@ -68,6 +76,7 @@
     {
       "id": "go-1.26",
       "label": "Go",
+      "version": "1.26",
       "group": "Popular",
       "monaco": "go",
       "file": "main.go",
@@ -76,6 +85,7 @@
     {
       "id": "rust-1.93",
       "label": "Rust",
+      "version": "1.93",
       "group": "Popular",
       "monaco": "rust",
       "file": "main.rs",
@@ -84,6 +94,7 @@
     {
       "id": "kotlin-2.4",
       "label": "Kotlin",
+      "version": "2.4",
       "group": "Popular",
       "monaco": "kotlin",
       "file": "Main.kt",
@@ -92,6 +103,7 @@
     {
       "id": "swift-6.4",
       "label": "Swift",
+      "version": "6.4",
       "group": "Popular",
       "monaco": "swift",
       "file": "main.swift",
@@ -100,6 +112,7 @@
     {
       "id": "zig-0.17",
       "label": "Zig",
+      "version": "0.17",
       "group": "Systems",
       "monaco": "plaintext",
       "file": "main.zig",
@@ -108,6 +121,7 @@
     {
       "id": "ldc-1.43",
       "label": "D",
+      "version": "LDC 1.43",
       "group": "Systems",
       "monaco": "plaintext",
       "file": "main.d",
@@ -116,6 +130,7 @@
     {
       "id": "nim-2.2",
       "label": "Nim",
+      "version": "2.2",
       "group": "Systems",
       "monaco": "plaintext",
       "file": "main.nim",
@@ -124,6 +139,7 @@
     {
       "id": "crystal-1.22",
       "label": "Crystal",
+      "version": "1.22",
       "group": "Systems",
       "monaco": "ruby",
       "file": "main.cr",
@@ -132,6 +148,7 @@
     {
       "id": "gnat-15",
       "label": "Ada",
+      "version": "GNAT 15",
       "group": "Systems",
       "monaco": "plaintext",
       "file": "main.adb",
@@ -140,6 +157,7 @@
     {
       "id": "gfortran-15",
       "label": "Fortran",
+      "version": "gfortran 15",
       "group": "Systems",
       "monaco": "plaintext",
       "file": "main.f90",
@@ -148,6 +166,7 @@
     {
       "id": "fpc-3.2",
       "label": "Pascal",
+      "version": "Free Pascal 3.2",
       "group": "Systems",
       "monaco": "pascal",
       "file": "main.pas",
@@ -156,6 +175,7 @@
     {
       "id": "nasm-3",
       "label": "Assembly",
+      "version": "NASM 3",
       "group": "Systems",
       "monaco": "plaintext",
       "file": "main.asm",
@@ -164,6 +184,7 @@
     {
       "id": "clang-objc-21",
       "label": "Objective-C",
+      "version": "Clang 21",
       "group": "Systems",
       "monaco": "objective-c",
       "file": "main.m",
@@ -172,6 +193,7 @@
     {
       "id": "php-8.5",
       "label": "PHP",
+      "version": "8.5",
       "group": "Scripting",
       "monaco": "php",
       "file": "main.php",
@@ -180,6 +202,7 @@
     {
       "id": "ruby-4.0",
       "label": "Ruby",
+      "version": "4.0",
       "group": "Scripting",
       "monaco": "ruby",
       "file": "main.rb",
@@ -188,6 +211,7 @@
     {
       "id": "bash-5.2",
       "label": "Bash",
+      "version": "5.2",
       "group": "Scripting",
       "monaco": "shell",
       "file": "main.sh",
@@ -196,6 +220,7 @@
     {
       "id": "powershell-7.6",
       "label": "PowerShell",
+      "version": "7.6",
       "group": "Scripting",
       "monaco": "powershell",
       "file": "main.ps1",
@@ -204,6 +229,7 @@
     {
       "id": "perl-5.44",
       "label": "Perl",
+      "version": "5.44",
       "group": "Scripting",
       "monaco": "perl",
       "file": "main.pl",
@@ -212,6 +238,7 @@
     {
       "id": "lua-5.5",
       "label": "Lua",
+      "version": "5.5",
       "group": "Scripting",
       "monaco": "lua",
       "file": "main.lua",
@@ -220,6 +247,7 @@
     {
       "id": "dart-3.13",
       "label": "Dart",
+      "version": "3.13",
       "group": "Scripting",
       "monaco": "dart",
       "file": "main.dart",
@@ -228,6 +256,7 @@
     {
       "id": "groovy-6.0",
       "label": "Groovy",
+      "version": "6.0",
       "group": "Scripting",
       "monaco": "java",
       "file": "main.groovy",
@@ -236,6 +265,7 @@
     {
       "id": "haskell-9.12",
       "label": "Haskell",
+      "version": "GHC 9.12",
       "group": "Functional",
       "monaco": "plaintext",
       "file": "main.hs",
@@ -244,6 +274,7 @@
     {
       "id": "ocaml-5.4",
       "label": "OCaml",
+      "version": "5.4",
       "group": "Functional",
       "monaco": "plaintext",
       "file": "main.ml",
@@ -252,6 +283,7 @@
     {
       "id": "dotnet-fsharp-10",
       "label": "F#",
+      "version": ".NET SDK 10",
       "group": "Functional",
       "monaco": "fsharp",
       "file": "Program.fs",
@@ -260,6 +292,7 @@
     {
       "id": "elixir-1.20",
       "label": "Elixir",
+      "version": "1.20",
       "group": "Functional",
       "monaco": "elixir",
       "file": "main.exs",
@@ -268,6 +301,7 @@
     {
       "id": "erlang-29",
       "label": "Erlang",
+      "version": "OTP 29",
       "group": "Functional",
       "monaco": "plaintext",
       "file": "main.erl",
@@ -277,6 +311,7 @@
     {
       "id": "clojure-1.12",
       "label": "Clojure",
+      "version": "1.12",
       "group": "Functional",
       "monaco": "clojure",
       "file": "main.clj",
@@ -285,6 +320,7 @@
     {
       "id": "scala-3.10",
       "label": "Scala",
+      "version": "3.10",
       "group": "Functional",
       "monaco": "scala",
       "file": "main.scala",
@@ -293,6 +329,7 @@
     {
       "id": "sbcl-2.6",
       "label": "Common Lisp",
+      "version": "SBCL 2.6",
       "group": "Functional",
       "monaco": "scheme",
       "file": "main.lisp",
@@ -301,6 +338,7 @@
     {
       "id": "racket-9.3",
       "label": "Racket",
+      "version": "9.3",
       "group": "Functional",
       "monaco": "scheme",
       "file": "main.rkt",
@@ -309,6 +347,7 @@
     {
       "id": "swipl-10",
       "label": "Prolog",
+      "version": "SWI-Prolog 10",
       "group": "Functional",
       "monaco": "plaintext",
       "file": "main.pl",
@@ -317,6 +356,7 @@
     {
       "id": "python-3.14-pandas2",
       "label": "Python (pandas 2)",
+      "version": "3.14, pandas 2",
       "group": "Data",
       "monaco": "python",
       "file": "main.py",
@@ -325,6 +365,7 @@
     {
       "id": "sqlite-3",
       "label": "SQL (SQLite)",
+      "version": "SQLite 3",
       "group": "Data",
       "monaco": "sql",
       "file": "main.sql",
@@ -334,6 +375,7 @@
     {
       "id": "duckdb-1.5",
       "label": "SQL (DuckDB)",
+      "version": "1.5",
       "group": "Data",
       "monaco": "sql",
       "file": "main.sql",
@@ -343,6 +385,7 @@
     {
       "id": "r-4.6",
       "label": "R",
+      "version": "4.6",
       "group": "Data",
       "monaco": "r",
       "file": "main.R",
@@ -351,6 +394,7 @@
     {
       "id": "julia-1.13",
       "label": "Julia",
+      "version": "1.13",
       "group": "Data",
       "monaco": "julia",
       "file": "main.jl",
@@ -359,6 +403,7 @@
     {
       "id": "octave-11",
       "label": "Octave",
+      "version": "11",
       "group": "Data",
       "monaco": "plaintext",
       "file": "main.m",
@@ -367,6 +412,7 @@
     {
       "id": "dotnet-vbnet-10",
       "label": "Visual Basic",
+      "version": ".NET SDK 10",
       "group": "Other",
       "monaco": "vb",
       "file": "Program.vb",
@@ -375,6 +421,7 @@
     {
       "id": "gnucobol-3.2",
       "label": "COBOL",
+      "version": "GnuCOBOL 3.2",
       "group": "Other",
       "monaco": "plaintext",
       "file": "main.cob",
@@ -383,6 +430,7 @@
     {
       "id": "fbc-1.10",
       "label": "FreeBASIC",
+      "version": "1.10",
       "group": "Other",
       "monaco": "vb",
       "file": "main.bas",
