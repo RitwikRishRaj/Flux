@@ -3,7 +3,7 @@ import type { UpstreamResult } from "./limits";
 
 export const API_BASE = "https://api.onlinecompiler.io";
 
-// Failure codes the browser turns into messages (frontend/src/lib/run-api.ts messageFor).
+// Failure codes the browser turns into messages (src/lib/run-api.ts messageFor).
 export type FailureCode =
   | "busy" | "monthly_cap" | "misconfigured" | "upstream_down" | "upstream_timeout" | "room_busy" | "daily_budget";
 export type Failure = { status: number; body: { code: FailureCode; error: string; resets_at?: string | null } };
