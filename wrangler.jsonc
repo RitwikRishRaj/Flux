@@ -23,15 +23,17 @@
     "FluxRoom": { "type": "durable-object", "storage": "sqlite" },
     "Limiter": { "type": "durable-object", "storage": "sqlite" }
   },
-  // Local dev (`npm run wrangler`, `npm run preview`).
+  // Local dev (`npm run wrangler`, `npm run preview`) and a plain `npx wrangler deploy`.
   "vars": {
+    "ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8787,http://127.0.0.1:8787,https://flux.rq3.workers.dev",
     "DAILY_RUN_BUDGET": "3000",
-    "ROOM_IDLE_MINUTES": "2",
-    "ALLOWED_ORIGINS": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8787,http://127.0.0.1:8787"
+    "ROOM_IDLE_MINUTES": "2"
   },
   "env": {
     // `npm run deploy` (= wrangler deploy --env production). Bindings and vars aren't inherited, so they are repeated.
     "production": {
+      // Same Worker as a plain deploy (flux.rq3.workers.dev), not a separate "flux-production" one.
+      "name": "flux",
       "durable_objects": {
         "bindings": [
           { "name": "Main", "class_name": "FluxRoom" },
@@ -41,8 +43,8 @@
       "vars": {
         "DAILY_RUN_BUDGET": "3000",
         "ROOM_IDLE_MINUTES": "2",
-        // Replace with your site's origin(s), comma-separated, e.g. "https://flux.example.com".
-        "ALLOWED_ORIGINS": "https://flux.example.com"
+        // Your site's origin(s), comma-separated. Add a custom domain here if you attach one.
+        "ALLOWED_ORIGINS": "https://flux.rq3.workers.dev"
       },
       "secrets": { "required": ["ONLINECOMPILER_API_KEY", "TURNSTILE_SECRET_KEY"] }
     }
