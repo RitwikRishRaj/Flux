@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import type * as Y from "yjs";
 import { ExternalLink, Maximize2, Minimize2, Minus, Plus, RotateCw } from "lucide-react";
 import { FLUX_THEME } from "@/lib/flux-monaco";
+import { buildSrcDoc } from "@/lib/web-preview";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -19,10 +20,7 @@ type FileKey = (typeof FILES)[number]["key"];
 const ZOOM_MIN = 25, ZOOM_MAX = 200, ZOOM_STEP = 25;
 const ICON_BTN = "flex h-8 w-8 items-center justify-center rounded-full text-primary/60 transition-colors duration-300 hover:bg-white/[0.06] hover:text-primary active:scale-95 disabled:pointer-events-none disabled:opacity-30";
 
-// A literal "</script" or "</style" in user code would close the tag early and spill the rest as HTML.
-export const buildSrcDoc = (html: string, css: string, js: string) =>
-  `<!doctype html><html><head><meta charset="utf-8"><style>${css.replace(/<\/style/gi, "<\\/style")}</style></head>` +
-  `<body>${html}<script>${js.replace(/<\/script/gi, "<\\/script")}</script></body></html>`;
+export { buildSrcDoc };
 
 // The new tab is a blob page at the app's origin, so user code must stay inside a sandboxed iframe there too.
 export const buildPreviewPage = (srcDoc: string) =>
