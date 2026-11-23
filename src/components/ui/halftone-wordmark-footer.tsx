@@ -44,7 +44,7 @@ export interface HalftoneWordmarkFooterProps {
   meta?: string
   /** Link columns along the top. */
   columns?: FooterColumn[]
-  /** Show the back-to-top link. It scrolls the window to 0. Defaults to true. */
+  /** Show the back-to-top link (#top: the top of the page, or an element with id="top"). Defaults to true. */
   backToTop?: boolean
   /** Starting colours. Defaults to "night". */
   preset?: HalftonePreset
@@ -66,7 +66,7 @@ export interface HalftoneWordmarkFooterProps {
   fontWeight?: number
   /** Face for the small type. */
   monoFamily?: string
-  /** Root height. A definite length, never a percentage. */
+  /** Root height. A definite length or "auto" (then reserve the word's room with bottom padding), never a percentage. */
   height?: string
   /** Extra root class names. */
   className?: string
@@ -147,35 +147,44 @@ const HWF_CSS = `
 }
 .hwf-root canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; max-width: none; }
 .hwf-top {
-  position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1.25fr) repeat(3, minmax(0, 1fr));
-  gap: 24px; padding: clamp(22px, 3.4vw, 40px) clamp(20px, 3.4vw, 44px) 0;
-  font-family: var(--hwf-mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; line-height: 1.75;
+  position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(0, 1fr));
+  gap: 32px; padding: clamp(28px, 4vw, 56px) clamp(20px, 3.4vw, 44px) 0;
+  font-family: var(--hwf-mono); font-size: 15px; line-height: 1.5;
 }
-.hwf-brand strong { display: block; font-weight: 500; }
-.hwf-brand span { opacity: .45; }
-.hwf-col h3 { margin: 0; font: inherit; opacity: .4; font-weight: 500; }
-.hwf-col ul { list-style: none; margin: 0; padding: 0; }
-.hwf-col a, .hwf-up {
-  color: inherit; text-decoration: none; opacity: .78; background: none; border: 0; padding: 0;
-  font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer;
+.hwf-brand strong { display: block; max-width: 18ch; font-size: clamp(22px, 2.4vw, 34px); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; }
+.hwf-brand span { display: block; margin-top: 14px; max-width: 34ch; opacity: .55; }
+.hwf-col h3 { margin: 0 0 12px; font: inherit; font-size: 13px; font-weight: 400; opacity: .45; }
+.hwf-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.hwf-col a {
+  color: inherit; text-decoration: none; opacity: .8;
   background-image: linear-gradient(currentColor, currentColor); background-size: 0% 1px;
-  background-repeat: no-repeat; background-position: 0 100%; transition: opacity .25s ease, background-size .35s cubic-bezier(.2,.7,.1,1);
+  background-repeat: no-repeat; background-position: 0 100%;
+  transition: opacity .3s cubic-bezier(.32,.72,0,1), background-size .45s cubic-bezier(.32,.72,0,1);
 }
-.hwf-col a:hover, .hwf-up:hover { opacity: 1; background-size: 100% 1px; }
-.hwf-col a:focus-visible, .hwf-up:focus-visible { outline: 1px solid currentColor; outline-offset: 3px; opacity: 1; }
+.hwf-col a:hover { opacity: 1; background-size: 100% 1px; }
+.hwf-col a:focus-visible, .hwf-up:focus-visible { outline: 2px solid var(--hwf-warm); outline-offset: 3px; opacity: 1; }
 .hwf-rule {
-  position: relative; z-index: 1; display: flex; justify-content: flex-end; align-items: center; gap: 16px;
-  margin: clamp(18px, 2.6vw, 30px) clamp(20px, 3.4vw, 44px) 0; padding-top: 12px;
-  border-top: 0.5px solid color-mix(in srgb, var(--hwf-ink) 16%, transparent);
-  font-family: var(--hwf-mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase;
+  position: relative; z-index: 1; display: flex; justify-content: flex-end;
+  margin: clamp(20px, 2.6vw, 32px) clamp(20px, 3.4vw, 44px) 0;
 }
+.hwf-up {
+  display: inline-flex; align-items: center; gap: 10px; padding: 6px 6px 6px 16px; border-radius: 999px;
+  background: var(--hwf-ink); color: var(--hwf-bg); font-family: var(--hwf-mono); font-size: 14px; font-weight: 500;
+  text-decoration: none; transition: transform .3s cubic-bezier(.32,.72,0,1);
+}
+.hwf-up:active { transform: scale(.97); }
+.hwf-up span {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px;
+  background: var(--hwf-bg); color: var(--hwf-ink); transition: transform .5s cubic-bezier(.32,.72,0,1);
+}
+.hwf-up:hover span { transform: translateY(-2px); }
 .hwf-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 720px) {
-  .hwf-top { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 18px; }
+  .hwf-top { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 28px; }
   .hwf-brand { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hwf-col a, .hwf-up { transition: none; }
+  .hwf-col a, .hwf-up, .hwf-up span { transition: none; }
 }
 `
 
@@ -447,10 +456,6 @@ export default function HalftoneWordmarkFooter({
     }
   }, [key])
 
-  const toTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" })
-  }
-
   return (
     <footer
       ref={rootRef}
@@ -460,6 +465,7 @@ export default function HalftoneWordmarkFooter({
           height,
           "--hwf-bg": colors.background,
           "--hwf-ink": colors.ink,
+          "--hwf-warm": colors.warm,
           "--hwf-mono": monoFamily,
         } as React.CSSProperties
       }
@@ -487,9 +493,15 @@ export default function HalftoneWordmarkFooter({
       </div>
       <div className="hwf-rule">
         {backToTop ? (
-          <button type="button" className="hwf-up" onClick={toTop}>
-            Back to top ↑
-          </button>
+          // A link, not a scroll call: it works without script and the page's smooth scrolling can take it.
+          <a className="hwf-up" href="#top">
+            Back to top
+            <span aria-hidden="true">
+              <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <path d="M6 10V2M2.5 5.5 6 2l3.5 3.5" />
+              </svg>
+            </span>
+          </a>
         ) : null}
       </div>
     </footer>

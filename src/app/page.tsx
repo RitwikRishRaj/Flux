@@ -9,7 +9,7 @@ const FOOTER_COLUMNS = [
   { title: "Rooms", links: [{ label: "Start a code room", href: "#top" }, { label: "Start a web room", href: "/?mode=web" }] },
   { title: "Explore", links: [{ label: "Features", href: "#features" }, { label: "Languages", href: "#languages" }, { label: "Privacy", href: "/privacy" }] },
   // Devicon is MIT: its licence ships next to the logos in public/logos.
-  { title: "Logos", links: [{ label: "Devicon", href: "https://devicon.dev" }, { label: "Simple Icons", href: "https://simpleicons.org" }] },
+  { title: "Logo credits", links: [{ label: "Devicon", href: "https://devicon.dev" }, { label: "Simple Icons", href: "https://simpleicons.org" }] },
 ];
 
 export default function Home() {
@@ -19,15 +19,17 @@ export default function Home() {
       <FluxHero />
       <Features />
       <LanguageMarquee />
+      {/* Height follows the text; the bottom padding is the room the cropped word takes (about 18.5% of the width). */}
       <HalftoneWordmarkFooter
         wordmark="Ritwik"
-        label="Flux, built by Ritwik"
-        meta="© 2026 · Code together from one link"
+        label="Flux is designed and built by Ritwik."
+        meta={"Bring a teammate, or at least a rubber duck. © 2026"}
         columns={FOOTER_COLUMNS}
         palette={{ background: "#141311", ink: "#E1E0CC", warm: "#F0A27F" }}
         fontFamily={GeistSans.style.fontFamily}
-        height="clamp(420px, 36vw, 560px)"
-        className="rounded-2xl md:rounded-[2rem]"
+        monoFamily={GeistSans.style.fontFamily}
+        height="auto"
+        className="rounded-2xl pb-[calc(18.5vw+40px)] md:rounded-[2rem]"
       />
     </main>
   );
