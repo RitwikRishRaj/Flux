@@ -3,7 +3,9 @@ import { GeistSans } from "geist/font/sans";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Flux — Code together, live",
+  title: "Flux",
+  // favicon.svg is drawn for tab sizes; logo.svg is the large version (README, sharing).
+  icons: { icon: "/favicon.svg" },
   description:
     "Flux is a collaborative IDE in your browser. Share a workspace, edit the same files, run code and ship together in real time.",
 };
