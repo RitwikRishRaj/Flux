@@ -4,10 +4,13 @@
 
 # Flux
 
-**Write, run and test code together, from one link.**
+**Write, run and test code together, from one link.**<br />
+**Pair programming, minus the elbows.**
 
 A collaborative code editor that lives in your browser. Open a room, send the link,<br />
-and everyone types, runs and tests in the same file. No sign-up, no installs, no merge conflicts.
+and watch everyone type, run and test in the same file while you all agree the bug was already there.<br />
+No sign-up, no installs, no merge conflicts, no "works on my machine".<br />
+Bring a teammate. Or at least a rubber duck. 🦆
 
 [**Open Flux →**](https://flux.rq3.workers.dev)
 
@@ -16,8 +19,7 @@ and everyone types, runs and tests in the same file. No sign-up, no installs, no
 ![Next.js](https://img.shields.io/badge/Next.js_15-000000?style=flat-square&logo=nextdotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-F38020?style=flat-square&logo=cloudflareworkers&logoColor=white)
-![Durable Objects](https://img.shields.io/badge/Durable_Objects-F38020?style=flat-square&logo=cloudflare&logoColor=white)
-![Yjs](https://img.shields.io/badge/Yjs_CRDT-30BCED?style=flat-square)
+![Yjs CRDT](https://img.shields.io/badge/Yjs-CRDT-30BCED?style=flat-square)
 ![Monaco](https://img.shields.io/badge/Monaco_Editor-0078D4?style=flat-square&logo=visualstudiocode&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)
 
